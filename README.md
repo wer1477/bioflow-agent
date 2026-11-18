@@ -72,7 +72,7 @@ cp agent-client/.env.example agent-client/backend/.env
 
 Open `http://localhost:3000`. The API health check is `GET /api/health`.
 
-For the decision layer, see `services/biod2-4b/README.md` and `docs/biod-integration.md`. The 4B weights are hosted on Hugging Face; `services/biod2-4b/bin/start.sh` downloads and serves them.
+For the decision layer, see `services/biod2-4b/README.md` and `docs/biod-integration.md`. The 4B weights are released on Hugging Face at `wer1477/biod-mt-v2-4b`; download them into `services/biod2-4b/weights/` with `services/biod2-4b/bin/download-weights.sh`, then start the sidecar with `services/biod2-4b/bin/start.sh`.
 
 ## Evaluation
 

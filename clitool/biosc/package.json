@@ -1,0 +1,16 @@
+{
+  "name": "bio-sc",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Single-cell RNA-seq QC, clustering, and marker/pseudobulk differential expression with Scanpy.",
+  "type": "module",
+  "bin": {
+    "bio-sc": "./bin/bio-sc.js"
+  },
+  "scripts": {
+    "test": "node --test"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

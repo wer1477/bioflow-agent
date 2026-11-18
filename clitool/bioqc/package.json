@@ -1,0 +1,16 @@
+{
+  "name": "bio-qc",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Machine-friendly quality-control summaries for FASTQ, BAM, and single-cell expression matrices.",
+  "type": "module",
+  "bin": {
+    "bio-qc": "./bin/bio-qc.js"
+  },
+  "scripts": {
+    "test": "node --test"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

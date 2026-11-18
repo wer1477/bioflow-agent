@@ -1,0 +1,34 @@
+/* 意见反馈弹窗：复用 auth-dialog 的模态外观，只补宽度与字符计数。 */
+
+.feedback-dialog {
+  width: min(520px, 100%);
+}
+
+.feedback-form {
+  gap: 12px;
+}
+
+.feedback-form textarea {
+  min-height: 132px;
+}
+
+.feedback-count {
+  justify-self: end;
+  color: var(--muted-soft);
+  font-size: var(--text-2xs);
+  font-variant-numeric: tabular-nums;
+}
+
+.feedback-dialog .auth-field small {
+  color: var(--muted-soft);
+  font-size: var(--text-2xs);
+  line-height: var(--leading-snug);
+}
+
+/* 管理员反馈收件箱：内容列允许换行，其余列保持窄。 */
+.feedback-inbox-table .feedback-content-cell {
+  min-width: 260px;
+  max-width: 460px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}

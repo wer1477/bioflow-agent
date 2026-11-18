@@ -1,0 +1,294 @@
+/* 只读能力目录：Tool Library 与 Knowledgebase。 */
+
+.catalog-canvas,
+.knowledgebase-canvas {
+  padding-top: clamp(8px, 1vw, 16px);
+}
+
+/* Tool Library：域侧栏 + 条目列表（无任何写操作）。 */
+
+.catalog-layout {
+  display: grid;
+  grid-template-columns: minmax(220px, 280px) minmax(0, 1fr);
+  gap: clamp(16px, 2vw, 24px);
+  align-items: start;
+}
+
+.catalog-domains {
+  position: sticky;
+  top: 18px;
+  border-color: var(--line-soft);
+  background: var(--surface-tint);
+}
+
+.catalog-toolbar {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 14px;
+  margin-bottom: 14px;
+  border-bottom: 1px solid var(--soft);
+  padding-bottom: 14px;
+}
+
+.catalog-search {
+  flex: 1 1 240px;
+  max-width: 340px;
+  margin: 0;
+}
+
+.catalog-kind-filter {
+  display: inline-flex;
+  gap: 2px;
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius-pill);
+  background: var(--surface-tint);
+  padding: 3px;
+}
+
+.catalog-kind-filter button {
+  border: 0;
+  border-radius: var(--radius-pill);
+  background: transparent;
+  color: var(--muted);
+  padding: 6px 12px;
+  font-size: var(--text-sm);
+  font-weight: 600;
+}
+
+.catalog-kind-filter button.active {
+  background: var(--accent-soft);
+  color: var(--accent-strong);
+}
+
+.catalog-kind-filter button:hover:not(.active) {
+  background: var(--surface-hover);
+}
+
+.catalog-context {
+  margin: 0 0 12px;
+  color: var(--muted);
+  font-size: var(--text-sm);
+}
+
+.catalog-entry-list {
+  display: grid;
+  gap: 10px;
+}
+
+.catalog-entry {
+  display: grid;
+  gap: 5px;
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius-lg);
+  background: rgba(var(--surface-rgb), 0.82);
+  padding: 13px 15px;
+  animation: configuration-card-enter 260ms ease-out var(--entry-delay, 0ms) both;
+  transition: border-color var(--duration-slow) var(--ease-standard), transform var(--duration-slow) var(--ease-standard);
+}
+
+.catalog-entry:hover {
+  border-color: var(--accent-border-hover);
+  transform: translateY(-1px);
+}
+
+.catalog-entry-topline {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+
+.catalog-kind,
+.catalog-status {
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius-pill);
+  background: var(--surface-tint);
+  color: var(--muted);
+  padding: 1px 7px;
+  font-size: var(--text-2xs);
+  font-weight: 700;
+}
+
+.catalog-kind.skill {
+  border-color: var(--accent-border-hover);
+  color: var(--accent-strong);
+}
+
+.catalog-kind.mcp {
+  border-color: var(--warning-border);
+  background: var(--warning-bg);
+  color: var(--warning-text);
+}
+
+.catalog-status.ok {
+  border-color: var(--success-border);
+  background: var(--success-bg);
+  color: var(--success-text);
+}
+
+.catalog-status.warn {
+  border-color: var(--warning-border);
+  background: var(--warning-bg);
+  color: var(--warning-text);
+}
+
+.catalog-status.danger {
+  border-color: var(--danger-border);
+  background: var(--danger-bg);
+  color: var(--danger-text);
+}
+
+.catalog-server {
+  margin-left: auto;
+  color: var(--muted);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: var(--text-2xs);
+}
+
+.catalog-entry h4 {
+  margin: 1px 0 0;
+  color: var(--ink);
+  font-size: var(--text-md);
+  letter-spacing: -0.01em;
+}
+
+.catalog-entry-id {
+  color: var(--muted);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: var(--text-2xs);
+}
+
+.catalog-entry p {
+  margin: 0;
+  color: var(--muted);
+  font-size: var(--text-sm);
+  line-height: var(--leading-normal);
+}
+
+.catalog-entry-domain {
+  color: var(--accent-strong);
+  font-size: var(--text-2xs);
+  font-weight: 600;
+}
+
+/* Knowledgebase：域 / 条目 / 正文详情。 */
+
+.kb-layout {
+  display: grid;
+  grid-template-columns: minmax(190px, 230px) minmax(230px, 320px) minmax(0, 1fr);
+  gap: clamp(14px, 1.8vw, 20px);
+  align-items: start;
+}
+
+.kb-domains {
+  position: sticky;
+  top: 18px;
+  border-color: var(--line-soft);
+  background: var(--surface-tint);
+}
+
+.kb-search {
+  margin: 0 0 10px;
+}
+
+.kb-entry-menu button {
+  min-height: 44px;
+}
+
+.kb-entry-menu button span {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.kb-detail {
+  min-width: 0;
+  min-height: 320px;
+}
+
+.kb-detail-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+  margin-bottom: 10px;
+}
+
+.kb-detail-heading h3 {
+  margin: 2px 0 4px;
+  color: var(--ink);
+  font-size: var(--text-xl);
+  letter-spacing: -0.02em;
+}
+
+.kb-detail-id {
+  color: var(--muted);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: var(--text-2xs);
+}
+
+.kb-detail-description {
+  margin: 0 0 12px;
+  color: var(--muted);
+  font-size: var(--text-sm);
+  line-height: var(--leading-normal);
+}
+
+.kb-markdown {
+  border-top: 1px solid var(--soft);
+  padding-top: 14px;
+}
+
+.kb-markdown .assistant-markdown {
+  font-size: var(--text-md);
+}
+
+.kb-resources {
+  margin-top: 18px;
+  border-top: 1px solid var(--soft);
+  padding-top: 14px;
+}
+
+.kb-resources h4 {
+  margin: 0 0 8px;
+  color: var(--muted);
+  font-size: var(--text-sm);
+}
+
+.kb-resources ul {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.kb-resources li {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius-md);
+  background: var(--surface-tint);
+  padding: 7px 10px;
+  font-size: var(--text-xs);
+}
+
+.kb-resources code {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text-soft);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.kb-resources span {
+  flex: 0 0 auto;
+  color: var(--muted);
+}

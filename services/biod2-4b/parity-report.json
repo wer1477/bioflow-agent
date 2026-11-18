@@ -1,0 +1,108 @@
+{
+ "schema": "bioflow.biod2-parity/v1",
+ "generated_at": "2026-11-05T09:54:49+0000",
+ "base_url": "http://127.0.0.1:8790",
+ "run": "artifacts/runs/paper1-4B-s20261104",
+ "health": {
+  "modelVersion": "biod-mt-v2",
+  "ckptPath": "/path/to/bioflow/services/biod2-4b/weights",
+  "ckptSha256": "sha256:6b5c54894ec5fb5bfc460e14610681ede7407864ac44e3d60e14981fc49ec422",
+  "ckptFiles": 6,
+  "ckptBytes": 192946703,
+  "loadedAt": "2026-11-05T09:51:44+0000"
+ },
+ "tasks": {
+  "tool_select": {
+   "rows": 76,
+   "agreement": 1.0,
+   "agreement_unit": "row",
+   "service_accuracy": 0.881579,
+   "offline_accuracy": 0.881579,
+   "delta_pp": 0.0,
+   "mismatch_samples": [],
+   "errors": 0,
+   "elapsed_s": 33.2
+  },
+  "kb_select": {
+   "rows": 90,
+   "agreement": 1.0,
+   "agreement_unit": "row",
+   "service_accuracy": 0.875,
+   "offline_accuracy": 0.875,
+   "delta_pp": 0.0,
+   "mismatch_samples": [],
+   "errors": 0,
+   "elapsed_s": 12.9
+  },
+  "context_retention": {
+   "rows": 54,
+   "agreement": 0.996599,
+   "agreement_unit": "group",
+   "service_accuracy": 0.904762,
+   "offline_accuracy": 0.908163,
+   "delta_pp": -0.34,
+   "mismatch_samples": [],
+   "errors": 0,
+   "elapsed_s": 5.2
+  },
+  "role_select": {
+   "rows": 90,
+   "agreement": 1.0,
+   "agreement_unit": "row",
+   "service_accuracy": 0.944444,
+   "offline_accuracy": 0.944444,
+   "delta_pp": 0.0,
+   "mismatch_samples": [],
+   "errors": 0,
+   "elapsed_s": 6.9
+  },
+  "relay_select": {
+   "rows": 80,
+   "agreement": 1.0,
+   "agreement_unit": "row",
+   "service_accuracy": 0.9875,
+   "offline_accuracy": 0.9875,
+   "delta_pp": 0.0,
+   "mismatch_samples": [],
+   "errors": 0,
+   "elapsed_s": 6.1
+  },
+  "premise_judge": {
+   "rows": 105,
+   "agreement": 0.990476,
+   "agreement_unit": "row",
+   "service_accuracy": 0.952381,
+   "offline_accuracy": 0.952381,
+   "delta_pp": 0.0,
+   "mismatch_samples": [
+    {
+     "id": "pj-060012",
+     "service": {
+      "task": "premise_judge",
+      "id": "pj-060012",
+      "relation": "insufficient"
+     },
+     "offline": {
+      "relation": "supports"
+     }
+    }
+   ],
+   "errors": 0,
+   "elapsed_s": 8.1
+  },
+  "overclaim_flag": {
+   "rows": 61,
+   "agreement": 1.0,
+   "agreement_unit": "row",
+   "service_accuracy": 0.704918,
+   "offline_accuracy": 0.704918,
+   "delta_pp": 0.0,
+   "mismatch_samples": [],
+   "errors": 0,
+   "elapsed_s": 4.7
+  }
+ },
+ "errors": [],
+ "ok": true,
+ "elapsed_s": 77.1
+}

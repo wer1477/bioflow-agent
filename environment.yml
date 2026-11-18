@@ -1,0 +1,27 @@
+name: bioagent
+channels:
+  - conda-forge
+  - bioconda
+dependencies:
+  - python=3.12
+  - pip
+  - r-base=4.4.3
+  # Required at runtime: the `glob` and `grep` core tools shell out to `rg`
+  # (`search_executor.ts`), so an environment built without it cannot search at all.
+  - ripgrep
+  # External executables invoked by the configured clitools:
+  # bio-fetch genome/sra use NCBI datasets and the SRA Toolkit, bio-peak motif
+  # uses HOMER. MACS2 has no conda build for the current Python/glibc, so it is
+  # built from source in .tools/macs2 by scripts/setup-cli-tools.sh.
+  - ncbi-datasets-cli=18.39.0
+  - sra-tools=3.4.1
+  - homer=5.1
+  - pip:
+      - -r requirements.txt
+  # Bioconductor reference implementations for bulk RNA-seq differential expression.
+  - r-biocmanager=1.30.27
+  - bioconductor-edger=4.4.0
+  - bioconductor-limma=3.62.1
+  - bioconductor-deseq2=1.46.0
+  # Direct R dependency checked by `bio-doctor check --profile bioagent-r-core`.
+  - r-data.table=1.18.6.1

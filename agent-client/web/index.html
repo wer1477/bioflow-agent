@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Bioflow Agent</title>
+    <script>
+      // 首帧防闪：在样式与模块脚本之前把生效主题写到 <html data-theme>。
+      // 解析规则必须与 src/app/theme.js 一致（light|dark|system，缺省按 system）。
+      (function () {
+        try {
+          var preference = localStorage.getItem('bioflow-theme');
+          var systemDark = window.matchMedia
+            && window.matchMedia('(prefers-color-scheme: dark)').matches;
+          var dark = preference === 'dark' || (preference !== 'light' && systemDark);
+          document.documentElement.dataset.theme = dark ? 'dark' : 'light';
+        } catch (error) {
+          document.documentElement.dataset.theme = 'light';
+        }
+      })();
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.jsx"></script>
+  </body>
+</html>

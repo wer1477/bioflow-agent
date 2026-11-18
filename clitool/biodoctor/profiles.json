@@ -1,0 +1,29 @@
+{
+  "schema_version": 1,
+  "profiles": [
+    {
+      "id": "bioagent-r-core",
+      "description": "Local R runtime for small bulk RNA-seq analysis and reproducible R scripts.",
+      "location": "wsl",
+      "commands": ["Rscript"],
+      "r_packages": ["edgeR", "limma", "DESeq2", "data.table"],
+      "provides": ["bulk-rna-small-analysis"]
+    },
+    {
+      "id": "bioagent-local-cli",
+      "description": "Standalone Bioagent discovery and lightweight analysis CLIs installed in the local Node environment.",
+      "location": "wsl",
+      "commands": ["bio-enrich", "bio-fetch", "bio-seq", "bio-variant", "bio-workflow", "science-search"],
+      "r_packages": [],
+      "provides": ["bio-data-discovery", "gene-list-enrichment", "small-variant-annotation", "sequence-validation", "workflow-planning"]
+    },
+    {
+      "id": "bioagent-ngs",
+      "description": "Heavy NGS workflow execution reserved for the laboratory Linux server.",
+      "location": "lab-server",
+      "commands": ["nextflow", "samtools", "fastp", "hisat2", "bowtie2", "bwa", "gatk", "bcftools"],
+      "r_packages": [],
+      "provides": ["ngs-workflow-execution"]
+    }
+  ]
+}

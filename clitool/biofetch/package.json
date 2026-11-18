@@ -1,0 +1,16 @@
+{
+  "name": "bio-fetch",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Reproducible genome-package and SRA-to-FASTQ retrieval for biological research.",
+  "type": "module",
+  "bin": {
+    "bio-fetch": "./bin/bio-fetch.js"
+  },
+  "scripts": {
+    "test": "node --test"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

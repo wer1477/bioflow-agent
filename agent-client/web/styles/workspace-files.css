@@ -1,0 +1,834 @@
+@media (prefers-reduced-motion: reduce) {
+  .tool-card.is-running::after {
+    animation: none;
+    display: none;
+  }
+
+  .state-dot.running svg,
+  .state-dot-arc {
+    animation: none;
+  }
+
+  .disclosure-caret,
+  .json-tree-caret {
+    transition: none;
+  }
+}
+
+/* 用 flex 而不是 grid-template-rows：error / conflict / 只读提示都是条件渲染的，
+   写死行数会让"预览正文"落到 auto 行、把 1fr 让给页脚（PDF 只分到 320px 就是这么来的）。
+   flex 对子元素个数不敏感，正文永远吃掉剩余高度。 */
+.workspace-file-view {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  background: var(--panel);
+}
+
+.workspace-file-header {
+  flex: 0 0 auto;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  border-bottom: 1px solid var(--line);
+  padding: 8px 10px;
+}
+
+.workspace-file-back {
+  display: inline-flex;
+  align-items: center;
+  flex: 0 0 auto;
+  gap: 2px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--panel);
+  color: var(--muted);
+  padding: 4px 8px 4px 5px;
+  font-size: var(--text-sm);
+  font-weight: 600;
+}
+
+.workspace-file-back:hover {
+  border-color: var(--accent-border-hover);
+  background: var(--accent-soft);
+  color: var(--accent-strong);
+}
+
+.workspace-file-header .workspace-file-identity {
+  display: grid;
+  min-width: 0;
+  gap: 1px;
+}
+
+.workspace-file-header strong {
+  overflow: hidden;
+  font-size: var(--text-base);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.workspace-file-toolbar {
+  flex: 0 0 auto;
+  /* dock 可以拖到 300px，视口却还很宽，所以按面板自身宽度收放而不是视口断点。 */
+  container-type: inline-size;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--line);
+}
+
+/* 窄面板里"自动保存"只留勾选框（提示气泡仍有说明），省下来的宽度让动作挤在一行。 */
+@container (max-width: 400px) {
+  .workspace-autosave span {
+    display: none;
+  }
+}
+
+.workspace-file-meta {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  gap: 8px;
+}
+
+.workspace-file-status {
+  border-radius: var(--radius-pill);
+  background: var(--surface-hover);
+  color: var(--muted);
+  padding: 2px 8px;
+  font-size: var(--text-2xs);
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.workspace-file-status.is-dirty {
+  background: var(--warning-bg);
+  color: var(--warning-text);
+}
+
+.workspace-file-status.is-conflict {
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+
+.workspace-file-status.is-busy,
+.workspace-file-status.is-saved {
+  background: var(--accent-soft);
+  color: var(--accent-strong);
+}
+
+.workspace-file-status.is-readonly {
+  background: var(--surface-hover);
+  color: var(--muted);
+}
+
+.workspace-autosave {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--muted);
+  font-size: var(--text-sm);
+  white-space: nowrap;
+}
+
+.workspace-autosave input {
+  width: 14px;
+  height: 14px;
+}
+
+.workspace-save-button {
+  min-height: 30px;
+  padding: 0 10px;
+  font-size: var(--text-sm);
+}
+
+.workspace-conflict {
+  flex: 0 0 auto;
+  display: grid;
+  gap: 8px;
+  border-bottom: 1px solid var(--warning-accent);
+  background: var(--warning-bg);
+  color: var(--warning-text);
+  padding: 10px 12px;
+}
+
+.workspace-conflict div {
+  display: grid;
+  gap: 2px;
+}
+
+.workspace-conflict-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.workspace-preview-control.is-danger {
+  border-color: var(--danger);
+  color: var(--danger);
+}
+
+.workspace-preview-note.is-banner {
+  flex: 0 0 auto;
+  margin: 0;
+  border-bottom: 1px solid var(--line);
+  background: var(--surface-soft);
+  padding: 8px 12px;
+}
+
+.workspace-file-footer {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  border-top: 1px solid var(--line);
+  background: var(--surface-soft);
+  color: var(--muted);
+  padding: 4px 10px;
+  font-size: var(--text-2xs);
+  font-variant-numeric: tabular-nums;
+}
+
+.workspace-file-identity,
+.workspace-file-toolbar-actions {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  gap: 8px;
+}
+
+.workspace-file-toolbar-actions {
+  flex: 0 0 auto;
+}
+
+.workspace-file-path {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--muted);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: var(--text-sm);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.workspace-file-kind {
+  flex: 0 0 auto;
+  border: 1px solid var(--accent-hover);
+  border-radius: var(--radius-pill);
+  background: var(--accent-soft);
+  color: var(--accent-strong);
+  padding: 2px 7px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: var(--text-2xs);
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+
+.workspace-file-summary {
+  flex: 0 0 auto;
+  color: var(--muted);
+  font-size: var(--text-xs);
+  white-space: nowrap;
+}
+
+.workspace-preview-control {
+  min-height: 30px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--panel);
+  color: var(--muted);
+  padding: 0 8px;
+  font-size: var(--text-sm);
+  font-weight: 600;
+}
+
+.workspace-preview-control:hover,
+.workspace-preview-control.active {
+  border-color: var(--accent-border-hover);
+  background: var(--accent-soft);
+  color: var(--accent-strong);
+}
+
+/* 唯一的滚动容器：面板里所有内容（代码、表格、PDF、图片）都放它这一层滚。 */
+.workspace-file-body {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  overflow: auto;
+  background: var(--surface-tint);
+}
+
+.workspace-editor {
+  width: 100%;
+  height: 100%;
+  min-height: 100%;
+  border: 0;
+  border-radius: 0;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: var(--text-md);
+  line-height: var(--leading-normal);
+  resize: none;
+}
+
+.workspace-code-preview {
+  min-width: max-content;
+  min-height: 100%;
+  padding: 12px 0 24px;
+  background:
+    linear-gradient(90deg, var(--surface-soft) 0, var(--surface-soft) 62px, var(--surface-tint) 62px, var(--surface-tint) 100%);
+}
+
+/* 高亮预览：整块预览区就是代码面板，深色底铺满，不再是一个浮在浅色底上的小盒子。 */
+.workspace-code-preview.is-dark {
+  padding: 0;
+  background: var(--code-surface);
+}
+
+/* dock 里由 .workspace-file-body 统一滚动：代码块自己不再开第二条滚动条。 */
+.workspace-code-preview.is-dark .code-block {
+  overflow: visible;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+
+.workspace-code-preview.is-dark .code-block-body {
+  max-height: none;
+  overflow: visible;
+  padding: 12px 18px 24px 0;
+}
+
+/* 行数多时让浏览器跳过屏外行；不再自己维护虚拟列表的滚动位置。 */
+.workspace-code-preview.is-dense li {
+  content-visibility: auto;
+  contain-intrinsic-size: auto var(--code-line-height);
+}
+
+.workspace-code-preview ol {
+  margin: 0;
+  padding: 0 18px 0 68px;
+  color: var(--muted-soft);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: var(--text-md);
+  line-height: var(--leading-normal);
+}
+
+.workspace-code-preview li {
+  min-height: var(--code-line-height);
+  padding-left: 14px;
+  white-space: nowrap;
+}
+
+.workspace-code-preview li::marker {
+  color: var(--muted-soft);
+  font-variant-numeric: tabular-nums;
+}
+
+/* 只服务"无高亮的 <ol> 行号预览"——它的底色是随主题走的 --surface-tint，
+   所以正文用主题文字色。CodeBlock 的 <code> 也在 .workspace-code-preview 里，
+   但它的底色是深色 --code-surface，必须留在代码面板配色内（--code-text），
+   否则明色主题下会拿到近黑的 --text，和深底几乎没有对比度。 */
+.workspace-code-preview ol code {
+  color: var(--text);
+  font-family: inherit;
+}
+
+.workspace-code-preview.is-wrapped {
+  min-width: 100%;
+}
+
+.workspace-code-preview.is-wrapped li,
+.workspace-code-preview.is-wrapped code {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.workspace-preview-note,
+.workspace-preview-warning,
+.workspace-preview-empty {
+  margin: 12px 18px;
+  color: var(--muted);
+  font-size: var(--text-sm);
+}
+
+.workspace-preview-warning {
+  border-left: 3px solid var(--warning-accent);
+  background: var(--warning-bg);
+  color: var(--warning-text);
+  padding: 8px 10px;
+}
+
+.workspace-data-preview {
+  padding: 16px;
+}
+
+.workspace-data-summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.workspace-data-summary div {
+  display: grid;
+  gap: 2px;
+}
+
+.workspace-data-summary strong {
+  font-size: var(--text-base);
+}
+
+.workspace-data-summary span {
+  color: var(--muted);
+  font-size: var(--text-sm);
+}
+
+.workspace-vcf-metadata {
+  margin-bottom: 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--surface-tint);
+  color: var(--muted);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: var(--text-sm);
+}
+
+.workspace-vcf-metadata summary {
+  cursor: pointer;
+  padding: 9px 10px;
+  font-family: Inter, ui-sans-serif, system-ui, sans-serif;
+  font-weight: 600;
+}
+
+.workspace-vcf-metadata ul {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  border-top: 1px solid var(--line);
+  padding: 10px 16px 10px 28px;
+}
+
+/* 纵向滚动交给外层的 .workspace-file-body，表头 sticky 相对它生效；
+   这里只负责外观，不再自带第三条滚动条。 */
+.workspace-table-region {
+  overflow: visible;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  background: var(--panel);
+}
+
+.workspace-data-table {
+  width: 100%;
+  min-width: max-content;
+  border-collapse: collapse;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: var(--text-sm);
+  line-height: var(--leading-snug);
+}
+
+.workspace-data-table th,
+.workspace-data-table td {
+  max-width: 340px;
+  border-bottom: 1px solid var(--soft);
+  padding: 8px 10px;
+  overflow: hidden;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.workspace-data-table th {
+  position: sticky;
+  top: 0;
+  z-index: var(--z-base);
+  background: var(--surface-hover);
+  color: var(--text-soft);
+  font-size: var(--text-xs);
+  font-weight: 700;
+}
+
+.workspace-data-table tr:nth-child(even) td {
+  background: var(--surface-tint);
+}
+
+.workspace-data-table tr:hover td {
+  background: var(--surface-tint);
+}
+
+.workspace-markdown-preview {
+  max-width: 900px;
+  padding: 24px clamp(20px, 5vw, 56px) 48px;
+}
+
+/* dock 里没有全宽预览那么宽：收掉视口比例的内边距，否则正文会被横向裁切。 */
+.workspace-file-body .workspace-markdown-preview {
+  max-width: 100%;
+  padding: 16px 14px 32px;
+}
+
+.workspace-file-body .workspace-markdown-preview .assistant-markdown {
+  font-size: var(--text-md);
+}
+
+.workspace-preview-image {
+  display: block;
+  max-width: 100%;
+  max-height: calc(100vh - 170px);
+  height: auto;
+  margin: 16px auto;
+  object-fit: contain;
+}
+
+/* 1:1：按原始像素看，超出部分由 .workspace-file-body 滚动（它本来就是唯一滚动容器）。 */
+.workspace-preview-image.is-actual {
+  max-width: none;
+  max-height: none;
+  margin: 0;
+}
+
+.workspace-preview-image.svg {
+  width: min(100%, 960px);
+}
+
+/* PDF 交给浏览器原生阅读器：铺满可用高度，缩放交给 `#view=FitH` 和阅读器自己的控件。
+   min-height 只在面板极矮时兜底，不制造第二条滚动条。 */
+.workspace-preview-frame {
+  display: block;
+  width: 100%;
+  height: 100%;
+  min-height: 320px;
+  border: 0;
+  background: var(--surface);
+}
+
+/* 下载是文件级动作，放在文件头右侧；工具栏留给"看"和"改"。 */
+.workspace-file-download {
+  display: inline-grid;
+  place-items: center;
+  flex: 0 0 auto;
+  border-radius: var(--radius-sm);
+  color: var(--muted);
+  padding: 4px;
+  text-decoration: none;
+}
+
+.workspace-file-download:hover {
+  background: var(--surface-hover);
+  color: var(--text);
+}
+
+.workspace-binary-preview {
+  display: grid;
+  gap: 6px;
+  padding: 18px;
+  color: var(--muted);
+}
+
+.settings-tabs {
+  display: flex;
+  gap: 4px;
+  padding: 0 20px;
+  overflow-x: auto;
+  border-bottom: 1px solid var(--line);
+  background: rgba(var(--surface-rgb), 0.82);
+  scrollbar-width: thin;
+}
+
+.settings-tab {
+  flex: 0 0 auto;
+  position: relative;
+  min-height: 46px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--muted);
+  padding: 0 14px;
+  font-weight: 600;
+  transition: color var(--duration-base) var(--ease-standard), background var(--duration-base) var(--ease-standard);
+}
+
+.settings-tab.active {
+  background: transparent;
+  color: var(--text);
+}
+
+.settings-tab::after {
+  position: absolute;
+  right: 14px;
+  bottom: 0;
+  left: 14px;
+  height: 3px;
+  border-radius: var(--radius-xs) var(--radius-xs) 0 0;
+  background: transparent;
+  content: '';
+}
+
+.settings-tab:hover {
+  color: var(--text);
+  background: rgba(var(--accent-soft-rgb), 0.5);
+}
+
+.settings-tab.active::after {
+  background: var(--accent);
+}
+
+/* ── 预览：统计条 / 序列 / hexdump / notebook ── */
+
+.workspace-data-metrics {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  color: var(--muted);
+  font-size: var(--text-xs);
+}
+
+.workspace-data-metrics span {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 4px;
+}
+
+.workspace-data-metrics b {
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+
+.workspace-feature-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+
+.workspace-feature-chips span {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 5px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-pill);
+  background: var(--surface-tint);
+  color: var(--text-soft);
+  padding: 3px 9px;
+  font-size: var(--text-xs);
+}
+
+.workspace-feature-chips b {
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.workspace-record-list {
+  display: grid;
+  gap: 10px;
+}
+
+.workspace-record {
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  background: var(--panel);
+  padding: 10px 12px;
+}
+
+.workspace-record-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 6px;
+  color: var(--muted);
+  font-size: var(--text-xs);
+}
+
+.workspace-record-head code {
+  overflow: hidden;
+  color: var(--text-soft);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.workspace-record pre {
+  margin: 0;
+  overflow-x: auto;
+  color: var(--text);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: var(--text-sm);
+  line-height: var(--leading-snug);
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+.workspace-record pre.workspace-quality {
+  color: var(--muted);
+}
+
+.workspace-hex {
+  overflow-x: auto;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  background: var(--surface-tint);
+  padding: 10px 12px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: var(--text-sm);
+  line-height: var(--leading-snug);
+}
+
+.workspace-hex-row {
+  display: grid;
+  grid-template-columns: auto auto minmax(0, 1fr);
+  gap: 12px;
+  white-space: pre;
+}
+
+.workspace-hex-offset {
+  color: var(--muted-soft);
+}
+
+.workspace-hex-bytes {
+  color: var(--text);
+}
+
+.workspace-hex-ascii {
+  color: var(--muted);
+}
+
+.workspace-notebook {
+  display: grid;
+  gap: 12px;
+  padding: 16px;
+}
+
+.workspace-notebook-cell {
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  background: var(--panel);
+}
+
+.workspace-notebook-cell > header {
+  border-bottom: 1px solid var(--line);
+  background: var(--surface-soft);
+  color: var(--muted);
+  padding: 5px 10px;
+  font-size: var(--text-2xs);
+  font-weight: 700;
+}
+
+.workspace-notebook-source,
+.workspace-notebook-output {
+  margin: 0;
+  padding: 10px 12px;
+  overflow-x: auto;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: var(--text-sm);
+  line-height: var(--leading-snug);
+}
+
+.workspace-notebook-output {
+  border-top: 1px dashed var(--line);
+  background: var(--surface-tint);
+  color: var(--muted);
+}
+
+.workspace-notebook-markdown {
+  padding: 4px 12px;
+}
+
+/* ── 代码编辑器：透明 textarea + 高亮层 + 行号列 ── */
+
+.code-editor {
+  position: relative;
+  height: 100%;
+  min-height: 100%;
+  background: var(--surface-tint);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: var(--text-md);
+  line-height: var(--leading-normal);
+  tab-size: 2;
+}
+
+.code-editor-gutter,
+.code-editor-highlight {
+  position: absolute;
+  top: 0;
+  left: 0;
+  bottom: 0;
+  pointer-events: none;
+}
+
+.code-editor-gutter {
+  z-index: var(--z-base);
+  display: flex;
+  flex-direction: column;
+  width: 52px;
+  overflow: hidden;
+  border-right: 1px solid var(--soft);
+  background: var(--surface-soft);
+  color: var(--muted-soft);
+  padding: 12px 8px 24px 0;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.code-editor-gutter span {
+  height: var(--leading-normal);
+  line-height: var(--leading-normal);
+}
+
+.code-editor-highlight {
+  right: 0;
+  overflow: hidden;
+  padding-left: 52px;
+}
+
+.code-editor-highlight pre {
+  margin: 0;
+  padding: 12px 18px 24px 14px;
+  color: var(--text);
+  font: inherit;
+  white-space: pre;
+}
+
+.code-editor.is-wrapped .code-editor-highlight pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.code-editor-highlight code {
+  font: inherit;
+}
+
+.code-editor-input {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  min-height: 240px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: transparent;
+  caret-color: var(--text);
+  padding: 12px 18px 24px 66px;
+  font: inherit;
+  resize: none;
+  white-space: pre;
+}
+
+.code-editor-input:focus {
+  outline: none;
+}
+
+.code-editor.is-wrapped .code-editor-input {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.code-editor-input::selection {
+  background: var(--accent-soft);
+}

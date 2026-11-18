@@ -1,0 +1,18 @@
+/* 样式入口：按域拆分，顺序即层叠顺序（tokens 必须最先，响应式在最后）。 */
+
+@import './styles/tokens.css'; /* 设计令牌 + 基础 reset */
+@import './styles/layout.css'; /* app shell / 侧栏骨架 / 头部 / 按钮 / 表单 / 悬停提示 */
+@import './styles/sidebar.css'; /* 会话列表 / 菜单 / 侧栏底部 / 侧导航 */
+@import './styles/chat.css'; /* 消息 / markdown / 计划面板 / composer */
+@import './styles/workspace.css'; /* workspace 概览 / 文件树 */
+@import './styles/tool-cards.css'; /* 详情面板 / 折叠行 / 工具卡片 / 代码块 / diff / JSON 树 */
+@import './styles/workspace-files.css'; /* 文件标签 / 预览 / 数据表 */
+@import './styles/settings.css'; /* 设置外壳 / 配置 / MCP 连接 */
+@import './styles/auth.css'; /* 登录 / 注册 / 找回 / 账户对话框 */
+@import './styles/feedback.css'; /* 意见反馈弹窗 */
+@import './styles/capabilities.css'; /* Tool Library / Knowledgebase */
+@import './styles/panels.css'; /* 面板 / 清单 / 弹窗 / Agent */
+@import './styles/responsive.css'; /* 响应式断点（980 / 720） */
+@import './styles/toast.css'; /* 通知 */
+@import './styles/right-dock.css'; /* 右侧 dock（D 批） */
+@import './styles/sidebar-tree.css'; /* 项目树 / 未分组 / 回收站 / 欢迎页 */

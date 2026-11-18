@@ -1,0 +1,53 @@
+.toast-viewport {
+  position: fixed;
+  right: 20px;
+  bottom: 20px;
+  z-index: var(--z-toast);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-width: 360px;
+}
+
+.toast {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  background: var(--panel);
+  color: var(--text);
+  font-size: var(--text-md);
+  box-shadow: var(--shadow-lv2);
+}
+
+.toast.success {
+  border-color: var(--success-border);
+  background: var(--success-bg);
+  color: var(--success-text);
+}
+
+.toast.error {
+  border-color: var(--danger-border);
+  background: var(--danger-bg);
+  color: var(--danger-text);
+}
+
+.toast.info {
+  border-color: var(--info-border);
+  background: var(--info-bg);
+  color: var(--info);
+}
+
+.toast-close {
+  border: 0;
+  background: transparent;
+  color: inherit;
+  line-height: var(--leading-none);
+  padding: 2px;
+  cursor: pointer;
+}
+
+/* ---------- 侧栏：项目树（参考 dsh 的布局） ---------- */

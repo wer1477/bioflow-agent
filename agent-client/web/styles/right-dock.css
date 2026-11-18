@@ -1,0 +1,260 @@
+/* 右侧 dock：标签栏 + 可拖拽宽度 + 可折叠 rail。
+   把原先并排的「文件预览 / 工具详情」和常驻文件树收进一个面板。 */
+
+.right-dock {
+  position: relative;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  /* 宽度走自定义属性，断点才能在不使用 !important 的情况下收敛它 */
+  width: var(--dock-width, 320px);
+  min-width: 0;
+  min-height: 0;
+  border-left: 1px solid var(--line);
+  background: var(--panel);
+}
+
+.right-dock-resizer {
+  position: absolute;
+  z-index: var(--z-raised);
+  top: 0;
+  left: -3px;
+  width: 7px;
+  height: 100%;
+  cursor: col-resize;
+}
+
+.right-dock-resizer:hover {
+  background: var(--line-soft);
+}
+
+body.is-resizing-dock {
+  cursor: col-resize;
+  user-select: none;
+}
+
+/* 标签栏：左侧是可横向滚动的标签（「项目文件」+ 每个打开的文件），
+   右侧固定放折叠按钮，标签再多也不会把它挤走。 */
+.right-dock-tabbar {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  border-bottom: 1px solid var(--line);
+  padding: 6px 8px;
+}
+
+.right-dock-tabs {
+  display: flex;
+  align-items: center;
+  flex: 1 1 auto;
+  gap: 2px;
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: thin;
+}
+
+.right-dock-tab {
+  display: inline-flex;
+  align-items: center;
+  flex: 0 0 auto;
+  max-width: 190px;
+  border-radius: var(--radius-sm);
+  color: var(--muted);
+  font-size: var(--text-sm);
+  white-space: nowrap;
+}
+
+.right-dock-tab:hover {
+  background: var(--surface-hover);
+  color: var(--text);
+}
+
+.right-dock-tab.active {
+  background: var(--soft);
+  color: var(--text);
+  font-weight: 600;
+}
+
+.right-dock-tab-label {
+  display: inline-flex;
+  align-items: center;
+  min-width: 0;
+  gap: 6px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  padding: 4px 2px 4px 8px;
+  font: inherit;
+}
+
+.right-dock-tab-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.right-dock-tab-close {
+  display: inline-grid;
+  place-items: center;
+  flex: 0 0 auto;
+  width: 20px;
+  height: 20px;
+  margin-right: 4px;
+  border: 0;
+  border-radius: var(--radius-xs);
+  background: transparent;
+  color: var(--muted);
+  padding: 0;
+}
+
+.right-dock-tab-close:hover {
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+
+.right-dock-dirty {
+  flex: 0 0 auto;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--warning-accent);
+}
+
+.right-dock-collapse {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--muted);
+  padding: 4px;
+}
+
+.right-dock-collapse:hover {
+  background: var(--surface-hover);
+  color: var(--text);
+}
+
+/* 全宽预览生效中：按钮是"已按下"的状态色，再点一次就是还原。 */
+.right-dock-collapse.is-active {
+  background: var(--accent-soft);
+  color: var(--accent-strong);
+}
+
+.right-dock-collapse:disabled {
+  cursor: not-allowed;
+  opacity: 0.4;
+}
+
+.right-dock-collapse:disabled:hover {
+  background: transparent;
+  color: var(--muted);
+}
+
+.right-dock-body {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.right-dock-panel {
+  flex: 1 1 0;
+  height: auto;
+  min-width: 0;
+  min-height: 0;
+}
+
+/* 面板在 dock 内不再自带左边框与底色，dock 已经提供 */
+.right-dock-body .workspace-sidebar {
+  border-left: none;
+  background: transparent;
+}
+
+/* ── 折叠态 rail ── */
+
+.right-dock.collapsed {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  width: 40px;
+  padding: 8px 0;
+  border-left: 1px solid var(--line);
+  background: var(--panel);
+}
+
+.right-dock-rail-tabs {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.right-dock-rail,
+.right-dock-rail-tab {
+  display: inline-grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--muted);
+}
+
+.right-dock-rail:hover,
+.right-dock-rail-tab:hover {
+  background: var(--surface-hover);
+  color: var(--text);
+}
+
+/* 窗口太窄时的自动收起：入口禁灰，避免"展开把对话页挤没"的第三态。 */
+.right-dock-rail:disabled,
+.right-dock-rail-tab:disabled {
+  cursor: not-allowed;
+  opacity: 0.4;
+}
+
+.right-dock-rail:disabled:hover,
+.right-dock-rail-tab:disabled:hover {
+  background: transparent;
+  color: var(--muted);
+}
+
+.right-dock-rail-tab.active {
+  background: var(--soft);
+  color: var(--text);
+}
+
+/* ── 窄屏 ──
+   dock 不再随窗口收缩，也不再有覆盖模式：两种情况都会动到对话区（前者挤压它，
+   后者直接盖住它，连目标与任务面板一起挡掉）。窄屏时由 .chat-workspace-layout
+   的第一列让位，dock 保持用户拖出来的宽度；要腾地方就手动收起成 rail。 */
+
+/*
+ * 「项目文件」面板内的两个视图（文件树 / 单个文件）常驻挂载，只切 hidden：
+ * 树的展开状态、编辑器草稿与滚动位置都不该因为切回目录而丢失。
+ */
+.workspace-panel-stack {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+}
+
+.workspace-panel-slot {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+}
+
+.workspace-panel-slot[hidden] {
+  display: none;
+}

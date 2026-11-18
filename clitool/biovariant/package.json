@@ -1,0 +1,16 @@
+{
+  "name": "bio-variant",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Machine-friendly small-batch human variant annotation through Ensembl VEP.",
+  "type": "module",
+  "bin": {
+    "bio-variant": "./bin/bio-variant.js"
+  },
+  "scripts": {
+    "test": "node --test"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

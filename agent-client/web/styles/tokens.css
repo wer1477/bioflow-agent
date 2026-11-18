@@ -1,0 +1,235 @@
+:root {
+  color-scheme: light;
+  --bg: #f4f8f6;
+  --panel: #ffffff;
+  --soft: #e8f1ee;
+  --line: #d5e1dc;
+  --text: #14241e;
+  --muted: #586a63;
+  --accent: #087a68;
+  --accent-strong: #066354;
+  --accent-soft: #e0f2eb;
+  --info: #245fc7;
+  --danger: #b42318;
+  --focus: #1f6feb;
+  --ink: #10251e;
+  --surface: #ffffff;
+  --surface-soft: #f8fafc;
+  --surface-tint: #fbfdfc;
+  --surface-hover: #e9f2ee;
+  --text-soft: #36564b;
+  /* 元信息令牌：压到白底 3.3:1 / 页面底 3.1:1，够 3:1 的辅助文字门槛（见 contrast.test.mjs）。 */
+  --muted-soft: #7f918a;
+  --line-soft: #dfe9e5;
+  --line-strong: #c9ded7;
+  --accent-hover: #74b7a7;
+  --accent-border-hover: #9ccdbd;
+  --success-bg: #edf9f3;
+  --success-text: #075d45;
+  --success-border: #b8ddce;
+  --warning-bg: #fff7ed;
+  --warning-text: #92400e;
+  --warning-border: #efd7a6;
+  --warning-accent: #d97706;
+  --danger-bg: #fee4e2;
+  --danger-soft: #fff4f2;
+  --danger-text: #962a21;
+  --danger-border: #f1beb8;
+  --info-bg: #e8f1ff;
+  --info-border: #d9e5f4;
+  --info-accent: #2f80ed;
+  --code-bg: #253c34;
+  --code-surface: #0f172a;
+  --code-border: #142a22;
+  --code-text: #e6f5ed;
+  --code-muted: #94a69f;
+  --scrim: rgba(19, 45, 37, 0.25);
+  --ring-accent: 0 0 0 3px rgba(var(--accent-rgb), 0.12);
+  --ring-focus: 0 0 0 3px rgba(var(--focus-rgb), 0.16);
+  --gradient-body: radial-gradient(circle at 100% 0%, rgba(93, 181, 151, 0.12), transparent 28rem);
+  --surface-rgb: 255, 255, 255;
+  --accent-rgb: 8, 122, 104;
+  --accent-soft-rgb: 224, 242, 235;
+  --shadow-rgb: 18, 48, 39;
+  --focus-rgb: 31, 111, 235;
+  --scrim-rgb: 19, 45, 37;
+  --on-accent: #ffffff;
+  /* 提示气泡：明暗两态都是「深底浅字」，不再靠反色（--ink 只作文字色）。 */
+  --tip-bg: #10251e;
+  --tip-fg: #ffffff;
+  /* ── 尺度：圆角 ── */
+  --radius-xs: 4px;
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
+  --radius-pill: 999px;
+  /* ── 尺度：字号 ── */
+  --text-2xs: 10px;
+  --text-xs: 11px;
+  --text-sm: 12px;
+  --text-md: 13px;
+  --text-base: 14px;
+  --text-lg: 16px;
+  --text-xl: 20px;
+  --text-2xl: 24px;
+  /* ── 尺度：行高 ── */
+  --leading-none: 1;
+  --leading-tight: 1.3;
+  --leading-snug: 1.45;
+  --leading-normal: 1.55;
+  --leading-relaxed: 1.7;
+  /* ── 尺度：阴影 ── */
+  --shadow-lv1: 0 1px 2px rgba(var(--shadow-rgb), 0.04), 0 3px 8px rgba(var(--shadow-rgb), 0.03);
+  --shadow-lv2: 0 12px 30px rgba(var(--shadow-rgb), 0.08);
+  --shadow-lv3: 0 22px 60px rgba(var(--shadow-rgb), 0.22);
+  --shadow-accent: 0 4px 10px rgba(var(--accent-rgb), 0.18);
+  --ring-info: 0 0 0 3px var(--info-bg);
+  --inset-check: inset 0 0 0 3px var(--panel);
+  --inset-tab-active: inset 0 -2px 0 var(--accent);
+  --inset-row-active: inset 3px 0 0 var(--accent);
+  /* ── 尺度：动效 ── */
+  --duration-fast: 120ms;
+  --duration-base: 160ms;
+  --duration-slow: 240ms;
+  --ease-standard: ease;
+  /* ── 尺度：层级 ── */
+  --z-base: 1;
+  --z-raised: 2;
+  --z-sticky: 5;
+  --z-dropdown: 20;
+  --z-backdrop: 100;
+  --z-toast: 1000;
+  /* ── 语法高亮：代码底在明暗两态都是深色，故这套颜色不随主题切换 ── */
+  --syntax-comment: #7a8f86;
+  --syntax-keyword: #c792ea;
+  --syntax-string: #a5d6a7;
+  --syntax-number: #f0b37e;
+  --syntax-function: #82aaff;
+  --syntax-attr: #ffcb6b;
+  --syntax-type: #7fdbca;
+  --syntax-deletion: #ff9c9c;
+  /* ── diff 行：同样是深色面板里的文字色/符号色，不跟主题走 ── */
+  --diff-add-fg: #b7ecc9;
+  --diff-del-fg: #f6c2c2;
+  --diff-add-sign: #4ed17e;
+  --diff-del-sign: #f25a5a;
+  /* ── 代码行高：CSS 与 content-visibility 的占位高度共用这一个值 ── */
+  --code-line-height: 20px;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  overflow: hidden;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+/* 只给读屏器看的文本：视觉上不占位，但仍参与无障碍树（用于状态播报）。 */
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+body {
+  margin: 0;
+  background:
+    radial-gradient(circle at 100% 0%, rgba(var(--accent-rgb), 0.12), transparent 28rem),
+    var(--bg);
+  color: var(--text);
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-size: var(--text-base);
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+
+button {
+  cursor: pointer;
+}
+
+.app-shell {
+  display: grid;
+  grid-template-columns: 280px minmax(0, 1fr);
+  height: 100dvh;
+  min-height: 0;
+  overflow: hidden;
+}
+
+
+[data-theme="dark"] {
+  color-scheme: dark;
+  /* 中性灰基：品牌青绿只做强调（按钮 / 焦点 / 选中描边），不再给底色带色相——
+     深色下墨绿底会和 success / warning / danger 抢色相，状态色反而看不出来。 */
+  --bg: #151517;
+  --panel: #1c1c1e;
+  --soft: #232324;
+  --line: #2e2e31;
+  --line-soft: #262629;
+  --line-strong: #3c3c40;
+  --text: #f2f3f5;
+  --text-soft: #cfd3d6;
+  --muted: #a8adb3;
+  --muted-soft: #8a9096;
+  --accent: #35c9ad;
+  --accent-strong: #4ad9b4;
+  --accent-soft: #16352e;
+  --accent-hover: #4ad9b4;
+  --accent-border-hover: #2f6d5e;
+  --info: #7aa7f5;
+  --info-bg: #1b2a44;
+  --info-border: #2b4468;
+  --info-accent: #6f9df0;
+  --danger: #f2555a;
+  --danger-bg: #3a1d20;
+  --danger-soft: #2a1517;
+  --danger-text: #ff9c9e;
+  --danger-border: #5e2a2e;
+  --focus: #6f9df0;
+  --ink: #f5f6f7;
+  --success-bg: #163027;
+  --success-text: #7fd0b4;
+  --success-border: #2a4d40;
+  --warning-bg: #33291a;
+  --warning-text: #f0b37a;
+  --warning-border: #5e4a26;
+  --warning-accent: #f0b37a;
+  --surface: #1c1c1e;
+  --surface-soft: #202023;
+  --surface-tint: #1a1a1c;
+  --surface-hover: #2a2a2d;
+  --code-bg: #101012;
+  --code-surface: #0c0c0e;
+  --code-border: #242427;
+  --code-text: #e6e7e9;
+  --code-muted: #9aa0a6;
+  --on-accent: #0b1512;
+  --tip-bg: #353638;
+  --tip-fg: #f2f3f5;
+  --scrim: rgba(0, 0, 0, 0.6);
+  --ring-accent: 0 0 0 3px rgba(var(--accent-rgb), 0.25);
+  --ring-focus: 0 0 0 3px rgba(var(--focus-rgb), 0.3);
+  --gradient-body: radial-gradient(circle at 100% 0%, rgba(255, 255, 255, 0.03), transparent 28rem);
+  --surface-rgb: 28, 28, 30;
+  --accent-rgb: 53, 201, 173;
+  --accent-soft-rgb: 22, 53, 46;
+  --shadow-rgb: 0, 0, 0;
+  --focus-rgb: 111, 157, 240;
+  --scrim-rgb: 0, 0, 0;
+  /* 暗色需要更高的不透明度，只覆盖阴影尺度 */
+  --shadow-lv1: 0 1px 2px rgba(var(--shadow-rgb), 0.5), 0 3px 8px rgba(var(--shadow-rgb), 0.4);
+  --shadow-lv2: 0 12px 30px rgba(var(--shadow-rgb), 0.5);
+  --shadow-lv3: 0 22px 60px rgba(var(--shadow-rgb), 0.6);
+}

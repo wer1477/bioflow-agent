@@ -1,0 +1,12 @@
+/.bioenv/
+/.mamba-root/
+/.mamba-cache/
+/.tools/
+/.Rlib/
+/.agents/
+/workspace/
+*:Zone.Identifier
+/DevLog/
+/services/biod2-4b/weights/
+/services/biod2-4b/logs/
+/services/biod2-4b/.pid

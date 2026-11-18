@@ -1,0 +1,417 @@
+.new-conversation-button:hover {
+  border-color: var(--accent-border-hover);
+  background: var(--surface-tint);
+  color: var(--accent-strong);
+}
+
+.new-conversation-icon {
+  display: grid;
+  width: 15px;
+  height: 15px;
+  place-items: center;
+  border: 1.5px solid currentcolor;
+  border-radius: 50%;
+  font-size: var(--text-base);
+  font-weight: 500;
+  line-height: var(--leading-none);
+}
+
+input,
+select,
+textarea {
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  background: var(--surface-tint);
+  color: var(--text);
+  outline: none;
+}
+
+input,
+select {
+  min-height: 38px;
+  padding: 0 10px;
+}
+
+textarea {
+  min-height: 96px;
+  padding: 10px;
+  line-height: var(--leading-snug);
+  resize: vertical;
+}
+
+input:focus,
+select:focus,
+textarea:focus {
+  border-color: var(--focus);
+  box-shadow: var(--ring-focus);
+}
+
+/* 全局焦点可见性：统一走 outline，避免 box-shadow 覆盖组件自身的阴影
+   （.composer / .toast / .panel 等已有 box-shadow，用环会互相顶掉）。 */
+:where(a, button, [role='button'], [tabindex], summary):focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+.conversation-list {
+  min-height: 0;
+  overflow: auto;
+  padding: 8px;
+}
+
+.conversation-row {
+  position: relative;
+  min-width: 0;
+}
+
+.conversation-item {
+  width: 100%;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text);
+  padding: 10px 58px 10px 10px;
+  text-align: left;
+}
+
+.conversation-row.active .conversation-item,
+.conversation-row:hover .conversation-item {
+  border-color: var(--line);
+  background: var(--soft);
+}
+
+.conversation-menu-trigger {
+  position: absolute;
+  top: 50%;
+  right: 7px;
+  display: grid;
+  width: 28px;
+  height: 28px;
+  place-items: center;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--muted);
+  padding: 0;
+  font-size: var(--text-md);
+  font-weight: 700;
+  letter-spacing: 1px;
+  opacity: 0;
+  transform: translateY(-50%);
+  transition: opacity var(--duration-fast) var(--ease-standard), background var(--duration-fast) var(--ease-standard), color var(--duration-fast) var(--ease-standard);
+}
+
+.conversation-row:hover .conversation-menu-trigger,
+.conversation-row:focus-within .conversation-menu-trigger,
+.conversation-row.menu-open .conversation-menu-trigger {
+  opacity: 1;
+}
+
+.conversation-menu-trigger:hover,
+.conversation-row.menu-open .conversation-menu-trigger {
+  background: var(--surface);
+  color: var(--text);
+}
+
+.conversation-pinned {
+  position: absolute;
+  top: 50%;
+  right: 37px;
+  display: grid;
+  width: 17px;
+  height: 17px;
+  place-items: center;
+  color: var(--muted);
+  pointer-events: none;
+  transform: translateY(-50%);
+}
+
+.conversation-activity {
+  position: absolute;
+  top: 50%;
+  right: 39px;
+  display: block;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  transform: translateY(-50%);
+}
+
+.conversation-activity.is-running {
+  border: 2px solid var(--accent-hover);
+  border-top-color: var(--accent);
+  animation: conversation-activity-spin 720ms linear infinite;
+}
+
+.conversation-activity.has-completed {
+  background: var(--info-accent);
+  box-shadow: var(--ring-info);
+}
+
+.conversation-pinned svg,
+.conversation-menu svg {
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: currentcolor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.7px;
+}
+
+@keyframes conversation-activity-spin {
+  to { transform: translateY(-50%) rotate(360deg); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .conversation-activity.is-running {
+    animation: none;
+    border-color: var(--accent);
+  }
+}
+
+.conversation-menu {
+  position: absolute;
+  z-index: var(--z-dropdown);
+  top: calc(100% - 4px);
+  right: 4px;
+  display: grid;
+  width: 164px;
+  gap: 3px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+  box-shadow: var(--shadow-lv2);
+  padding: 5px;
+}
+
+.conversation-menu > button {
+  display: flex;
+  align-items: center;
+  min-height: 34px;
+  gap: 9px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text);
+  padding: 0 8px;
+  text-align: left;
+  font-size: var(--text-sm);
+}
+
+.conversation-menu > button:hover {
+  background: var(--soft);
+  color: var(--text);
+}
+
+.conversation-menu > button.danger {
+  color: var(--danger);
+}
+
+.conversation-menu > button.danger:hover {
+  background: var(--danger-soft);
+}
+
+.conversation-rename-form {
+  display: grid;
+  gap: 7px;
+  padding: 3px;
+}
+
+.conversation-rename-form input {
+  min-height: 34px;
+  padding: 0 8px;
+  font-size: var(--text-sm);
+}
+
+.conversation-rename-form > div {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+.conversation-rename-form button {
+  min-height: 30px;
+  padding: 0 8px;
+  font-size: var(--text-xs);
+}
+
+.conversation-item strong,
+.summary-row strong {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.conversation-item span,
+.summary-row span {
+  display: block;
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: var(--text-sm);
+}
+
+.sidebar-footer {
+  position: relative;
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 8px;
+  padding: 12px;
+  border-top: 1px solid var(--line);
+}
+
+.sidebar.collapsed .sidebar-footer {
+  grid-row: 3;
+  align-self: end;
+  padding: 10px 8px;
+}
+
+/* ── 账户入口：侧栏底部触发器 + 向上弹出的两项菜单 ────────────────── */
+.account-menu-root {
+  position: relative;
+  min-width: 0;
+}
+
+.account-trigger {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  height: 36px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text);
+  padding: 0 8px;
+  font-size: var(--text-md);
+  text-align: left;
+}
+
+.account-trigger:hover,
+.account-trigger[aria-expanded="true"] {
+  background: var(--surface-hover);
+}
+
+.account-trigger .icon {
+  flex: none;
+  width: 16px;
+  height: 16px;
+}
+
+.sidebar.collapsed .account-trigger {
+  justify-content: center;
+  width: 36px;
+  padding: 0;
+}
+
+.sidebar.collapsed .account-trigger-label {
+  display: none;
+}
+
+.account-menu {
+  position: absolute;
+  right: 0;
+  bottom: calc(100% + 6px);
+  left: 0;
+  z-index: var(--z-dropdown);
+  display: grid;
+  gap: 2px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-lg);
+  background: var(--panel);
+  box-shadow: var(--shadow-lv2);
+  padding: 5px;
+}
+
+/* 收起态只有 56px 宽：菜单向右溢出，靠 min-width 保持可读。 */
+.sidebar.collapsed .account-menu {
+  right: auto;
+  left: 0;
+  width: 200px;
+}
+
+.account-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  height: 34px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text);
+  padding: 0 8px;
+  font-size: var(--text-sm);
+  text-align: left;
+}
+
+.account-menu-item:hover {
+  background: var(--surface-hover);
+}
+
+.account-menu-item[aria-current="page"] {
+  background: var(--soft);
+  font-weight: 600;
+}
+
+.account-menu-item .icon {
+  flex: none;
+  width: 16px;
+  height: 16px;
+}
+
+.main-panel,
+.view.active {
+  min-width: 0;
+  min-height: 0;
+}
+
+.main-panel {
+  overflow: hidden;
+}
+
+.view {
+  display: none;
+  height: 100%;
+}
+
+.view.active {
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+}
+
+.chat-view.active {
+  grid-template-rows: auto minmax(0, 1fr);
+}
+
+#settingsView.active {
+  grid-template-rows: auto auto 1fr;
+}
+
+#generalSettingsView.active {
+  grid-template-rows: auto minmax(0, 1fr);
+}
+
+/* 会话区让位，右侧 dock 保持自己的宽度。
+   第一列必须是 minmax(0, 1fr)：写死 360px 下限时，窗口只要窄于「对话页 + dock」，
+   网格就会横向溢出，dock 被顶出视口右侧。
+   现在变窄只会压缩对话区，dock 不会被压扁、也不会盖住对话页。 */
+.chat-workspace-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  min-width: 0;
+  min-height: 0;
+}
+
+.chat-conversation-panel {
+  display: grid;
+  /* 隐式列默认按 max-content 撑开：对话区被压窄时，消息列表会溢出到右侧 dock 上面。
+     显式给一条 minmax(0, 1fr) 的列，内容再宽也只在本列内滚动。 */
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr) auto auto auto;
+  min-width: 0;
+  min-height: 0;
+}
+

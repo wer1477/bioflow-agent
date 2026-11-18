@@ -1,0 +1,16 @@
+{
+  "name": "bio-peak",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Peak calling, motif discovery, and transparent peak-to-gene linking for Bioflow.",
+  "type": "module",
+  "bin": {
+    "bio-peak": "./bin/bio-peak.js"
+  },
+  "scripts": {
+    "test": "node --test"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

@@ -1,0 +1,17 @@
+{
+  "name": "science-search",
+  "version": "0.4.0",
+  "private": true,
+  "description": "Machine-friendly CLI for the Agent science connector registry.",
+  "type": "module",
+  "bin": {
+    "science-search": "./bin/science-search.js"
+  },
+  "scripts": {
+    "test": "node --test",
+    "start": "node ./bin/science-search.js"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

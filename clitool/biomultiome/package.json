@@ -1,0 +1,10 @@
+{
+  "name": "bio-multiome",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Validate aligned scRNA/scATAC exports and produce explicit multiome candidate evidence edges.",
+  "type": "module",
+  "bin": { "bio-multiome": "./bin/bio-multiome.js" },
+  "scripts": { "test": "node --test" },
+  "engines": { "node": ">=20" }
+}

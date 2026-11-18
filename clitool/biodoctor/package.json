@@ -1,0 +1,16 @@
+{
+  "name": "bio-doctor",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Machine-friendly readiness checks for Bioagent capability profiles.",
+  "type": "module",
+  "bin": {
+    "bio-doctor": "./bin/bio-doctor.js"
+  },
+  "scripts": {
+    "test": "node --test"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

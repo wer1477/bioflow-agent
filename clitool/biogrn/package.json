@@ -1,0 +1,16 @@
+{
+  "name": "bio-grn",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Machine-friendly candidate gene regulatory network inference with Arboreto.",
+  "type": "module",
+  "bin": {
+    "bio-grn": "./bin/bio-grn.js"
+  },
+  "scripts": {
+    "test": "node --test"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

@@ -1,0 +1,458 @@
+.workspace-kicker {
+  display: block;
+  margin-bottom: 4px;
+  color: var(--muted);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: var(--text-2xs);
+  font-weight: 700;
+  letter-spacing: 0.1em;
+}
+
+.workspace-header h3 {
+  margin: 0;
+  font-size: var(--text-lg);
+}
+
+.workspace-header p {
+  max-width: 240px;
+  margin: 4px 0 0;
+  overflow: hidden;
+  color: var(--muted);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: var(--text-xs);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.workspace-header .workspace-bound-directory {
+  color: var(--text);
+  font-size: var(--text-sm);
+  font-weight: 600;
+}
+
+.workspace-header .workspace-full-path {
+  color: var(--muted);
+}
+
+.workspace-overview {
+  display: grid;
+  gap: 13px;
+  border-bottom: 1px solid var(--line);
+  background: var(--surface-soft);
+  padding: 14px;
+}
+
+.workspace-overview-primary {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+
+.workspace-overview-primary > div {
+  min-width: 0;
+}
+
+.workspace-overview-primary strong,
+.workspace-overview-primary span {
+  display: block;
+}
+
+.workspace-overview-primary strong {
+  color: var(--ink);
+  font-size: var(--text-sm);
+}
+
+.workspace-overview-primary span:not(.workspace-orbit) {
+  margin-top: 3px;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: var(--text-2xs);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.workspace-orbit {
+  width: 14px;
+  height: 14px;
+  flex: 0 0 auto;
+  border: 3px solid var(--accent-hover);
+  border-radius: 50%;
+  box-shadow: inset 0 0 0 2px var(--surface-tint), var(--ring-accent);
+}
+
+.workspace-metrics {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 6px;
+}
+
+.workspace-metrics > span {
+  display: grid;
+  gap: 2px;
+  border-left: 1px solid var(--line-soft);
+  padding-left: 8px;
+}
+
+.workspace-metrics > span:first-child {
+  border-left: 0;
+  padding-left: 0;
+}
+
+.workspace-metrics b {
+  color: var(--text);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: var(--text-base);
+  line-height: var(--leading-none);
+}
+
+.workspace-metrics small {
+  color: var(--muted);
+  font-size: var(--text-2xs);
+}
+
+.workspace-actions {
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+  border-bottom: 1px solid var(--line);
+}
+
+.workspace-actions .secondary-button {
+  width: 100%;
+}
+
+.workspace-actions .workspace-upload-primary {
+  width: 100%;
+  box-shadow: var(--shadow-accent);
+}
+
+.workspace-status,
+.workspace-empty {
+  padding: 10px 12px;
+  color: var(--muted);
+  font-size: var(--text-sm);
+}
+
+.workspace-status.error {
+  color: var(--danger);
+}
+
+.secret-input {
+  display: flex;
+  gap: 8px;
+}
+
+.secret-input input {
+  min-width: 0;
+  flex: 1;
+}
+
+.workspace-tree {
+  min-height: 0;
+  overflow: auto;
+  padding: 8px 6px 14px;
+}
+
+.workspace-tree-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin: 0 6px 7px;
+  color: var(--muted);
+  font-size: var(--text-2xs);
+  font-weight: 700;
+  letter-spacing: 0.07em;
+}
+
+.workspace-tree-heading b {
+  border-radius: var(--radius-pill);
+  background: var(--surface-hover);
+  color: var(--text-soft);
+  padding: 3px 6px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: var(--text-2xs);
+  font-weight: 600;
+  letter-spacing: 0;
+}
+
+.workspace-node-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 28px;
+  align-items: center;
+  min-height: 32px;
+  padding-right: 6px;
+}
+
+.workspace-node-main {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  height: 30px;
+  gap: 6px;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  text-align: left;
+}
+
+.workspace-node-main:hover {
+  border-radius: var(--radius-sm);
+  background: var(--surface-tint);
+}
+
+.workspace-node-main span {
+  flex: 0 0 14px;
+  color: var(--muted);
+  text-align: center;
+}
+
+.workspace-node-main strong {
+  min-width: 0;
+  overflow: hidden;
+  font-size: var(--text-sm);
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.workspace-node-delete {
+  width: 24px;
+  height: 24px;
+  border: 0;
+  border-radius: var(--radius-xs);
+  background: transparent;
+  color: var(--danger);
+  line-height: var(--leading-none);
+}
+
+.workspace-node-delete:hover {
+  background: var(--danger-bg);
+}
+
+.workspace-file-panel {
+  display: grid;
+  grid-template-rows: auto auto 1fr;
+  min-width: 0;
+  min-height: 0;
+  border-left: 1px solid var(--line);
+  background: var(--panel);
+}
+
+/* ── 文件树的当前文件、行内动作与新建/重命名输入 ── */
+
+.workspace-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.workspace-node-row.is-active {
+  background: var(--accent-soft);
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+
+.workspace-node-row.is-active strong {
+  color: var(--accent-strong);
+}
+
+.workspace-node-actions {
+  display: inline-flex;
+  align-items: center;
+  flex: 0 0 auto;
+  gap: 2px;
+  opacity: 0;
+  transition: opacity var(--duration-fast) var(--ease-standard);
+}
+
+.workspace-node-row:hover .workspace-node-actions,
+.workspace-node-row:focus-within .workspace-node-actions {
+  opacity: 1;
+}
+
+.workspace-node-action {
+  display: inline-grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border: 0;
+  border-radius: var(--radius-xs);
+  background: transparent;
+  color: var(--muted);
+  padding: 0;
+}
+
+.workspace-node-action:hover {
+  background: var(--surface-hover);
+  color: var(--text);
+}
+
+.workspace-inline-form {
+  display: grid;
+  gap: 2px;
+  padding: 4px 8px 6px;
+}
+
+.workspace-inline-input {
+  width: 100%;
+  border: 1px solid var(--accent-border-hover);
+  border-radius: var(--radius-sm);
+  background: var(--panel);
+  padding: 4px 8px;
+  font-size: var(--text-sm);
+}
+
+.workspace-inline-hint {
+  color: var(--muted);
+  font-size: var(--text-2xs);
+}
+
+/* ── 分块上传任务（右侧 dock 底部常驻） ── */
+
+.upload-dock {
+  flex: 0 1 auto;
+  max-height: 45%;
+  overflow: auto;
+  border-top: 1px solid var(--line);
+  padding: 10px 12px 12px;
+}
+
+.upload-dock-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.upload-dock-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--ink);
+  font-size: var(--text-sm);
+  font-weight: 700;
+}
+
+.upload-dock-header small {
+  color: var(--muted);
+  font-size: var(--text-2xs);
+}
+
+.upload-dock-error {
+  margin-top: 8px;
+  border: 1px solid var(--danger-border);
+  border-radius: var(--radius-sm);
+  background: var(--danger-soft);
+  color: var(--danger-text);
+  padding: 6px 8px;
+  font-size: var(--text-2xs);
+}
+
+.upload-task-list {
+  display: grid;
+  gap: 8px;
+  margin: 10px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.upload-task {
+  display: grid;
+  gap: 6px;
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius-md);
+  background: var(--surface-tint);
+  padding: 8px 10px;
+}
+
+.upload-task.is-failed {
+  border-color: var(--danger-border);
+}
+
+.upload-task.is-completed {
+  opacity: 0.72;
+}
+
+.upload-task-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+}
+
+.upload-task-head strong {
+  overflow: hidden;
+  font-size: var(--text-sm);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.upload-task-head small {
+  flex: 0 0 auto;
+  color: var(--muted);
+  font-size: var(--text-2xs);
+}
+
+.upload-progress {
+  height: 6px;
+  overflow: hidden;
+  border-radius: var(--radius-pill);
+  background: var(--soft);
+}
+
+.upload-progress > span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--accent);
+  transition: width 180ms ease;
+}
+
+.upload-task-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  color: var(--muted);
+  font-size: var(--text-2xs);
+}
+
+.upload-task-status.is-uploading {
+  color: var(--accent-strong);
+}
+
+.upload-task-status.is-failed {
+  color: var(--danger-text);
+}
+
+.upload-task-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 4px;
+}
+
+.upload-action {
+  display: inline-grid;
+  place-items: center;
+  min-width: 24px;
+  height: 24px;
+  border: 0;
+  border-radius: var(--radius-xs);
+  background: transparent;
+  color: var(--muted);
+  padding: 0 4px;
+}
+
+.upload-action:hover {
+  background: var(--surface-hover);
+  color: var(--text);
+}
+
+.upload-action-text {
+  display: inline-flex;
+  width: auto;
+  padding: 0 8px;
+  color: var(--accent-strong);
+  font-size: var(--text-2xs);
+  font-weight: 600;
+}

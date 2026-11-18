@@ -1,0 +1,110 @@
+{
+  "servers": [
+    {
+      "id": "tavily",
+      "name": "tavily",
+      "description": "",
+      "command": "",
+      "args": [],
+      "env": {},
+      "transportType": "streamableHttp",
+      "url": "https://mcp.tavily.com/mcp/?tavilyApiKey=${BIOFLOW_TAVILY_API_KEY}",
+      "headers": {},
+      "enabled": true,
+      "internal": true
+    },
+    {
+      "id": "exa",
+      "name": "exa",
+      "description": "",
+      "command": "",
+      "args": [],
+      "env": {},
+      "transportType": "streamableHttp",
+      "url": "https://mcp.exa.ai/mcp",
+      "headers": {
+        "x-api-key": "${BIOFLOW_MCP_EXA_X_API_KEY}"
+      },
+      "enabled": true,
+      "internal": true
+    },
+    {
+      "id": "context7",
+      "name": "context7",
+      "description": "",
+      "command": "",
+      "args": [],
+      "env": {},
+      "transportType": "streamableHttp",
+      "url": "https://mcp.context7.com/mcp",
+      "headers": {
+        "CONTEXT7_API_KEY": "${BIOFLOW_MCP_CONTEXT7_API_KEY}"
+      },
+      "enabled": true
+    },
+    {
+      "id": "biomcp",
+      "name": "biomcp",
+      "description": "Biomedical evidence (read-only): ClinicalTrials.gov, ClinVar/ClinGen, gnomAD/GTEx/HPA, OncoKB/CIViC, cBioPortal study analytics, drugs, pathways. Requires biomcp-cli (uv tool install biomcp-cli); the wrapper puts ~/.local/bin on PATH.",
+      "command": "bash",
+      "args": ["-c", "export PATH=\"$HOME/.local/bin:$PATH\"; exec biomcp serve"],
+      "env": {},
+      "transportType": "stdio",
+      "url": "",
+      "headers": {},
+      "enabled": true
+    },
+    {
+      "id": "tooluniverse",
+      "name": "tooluniverse",
+      "description": "ToolUniverse gateway (2,700+ scientific tools; compact mode exposes only tool discovery/execution). Requires tooluniverse==1.5.7 (uv tool install); the wrapper puts ~/.local/bin on PATH.",
+      "command": "bash",
+      "args": ["-c", "export PATH=\"$HOME/.local/bin:$PATH\"; exec tooluniverse-smcp-stdio --compact-mode"],
+      "env": {
+        "PYTHONIOENCODING": "utf-8"
+      },
+      "transportType": "stdio",
+      "url": "",
+      "headers": {},
+      "enabled": true
+    },
+    {
+      "id": "chatspatial",
+      "name": "chatspatial",
+      "description": "Spatial transcriptomics analysis (Scanpy/Squidpy; Visium/Xenium/CosMx; spatial domains, deconvolution, cell communication). Conditional: heavy Python deps, and training-style methods can exceed the 60s MCP tool timeout.",
+      "command": "uvx",
+      "args": ["--from", "chatspatial", "chatspatial", "server"],
+      "env": {},
+      "transportType": "stdio",
+      "url": "",
+      "headers": {},
+      "enabled": false
+    },
+    {
+      "id": "seqera",
+      "name": "seqera",
+      "description": "Seqera Platform hosted MCP: workflow launch/monitoring, Wave containers, nf-core module discovery, SRA/ENA/GEO samplesheets. Conditional: requires a Seqera account and a Personal Access Token.",
+      "command": "",
+      "args": [],
+      "env": {},
+      "transportType": "streamableHttp",
+      "url": "https://mcp.seqera.io/mcp",
+      "headers": {
+        "Authorization": "Bearer ${BIOFLOW_MCP_SEQERA_ACCESS_TOKEN}"
+      },
+      "enabled": false
+    },
+    {
+      "id": "biocontext",
+      "name": "biocontext",
+      "description": "Biomedical knowledge bases (read-only, hosted): OLS ontologies, Human Protein Atlas, PRIDE proteomics, PanglaoDB markers, ClinicalTrials.gov, FDA drugs, grants.gov, bioRxiv/medRxiv, Europe PMC, STRING, Reactome, InterPro, UniProt. No API key required.",
+      "command": "",
+      "args": [],
+      "env": {},
+      "transportType": "streamableHttp",
+      "url": "https://biocontext-kb.fastmcp.app/mcp",
+      "headers": {},
+      "enabled": true
+    }
+  ]
+}

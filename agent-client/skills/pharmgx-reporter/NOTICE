@@ -1,0 +1,116 @@
+# NOTICE — third-party code import
+
+This directory (`agent-client/skills/生信分析/pharmgx-reporter/`) imports code from
+the **ClawBio** project. This file records provenance and the local changes made
+during import, as required by the MIT License (see `LICENSE`).
+
+## Source
+
+| Field | Value |
+|---|---|
+| Upstream repository | https://github.com/ClawBio/ClawBio |
+| License | MIT (see upstream `LICENSE`; `skills/pharmgx-reporter/SKILL.md` declares `license: MIT`) |
+| Upstream ref | `main` |
+| Upstream commit SHA | `f163a6cf930a0ad5c56ac790a4f0a2e72f577928` |
+| Commit date | 2026-10-20T07:51:12Z |
+| Commit subject | Merge pull request #669 from camlloyd/fix/clinical-variant-reporter-repro-bundle |
+| Export date | 2026-10-20 |
+| Retrieval method | `gh api repos/ClawBio/ClawBio/contents/<path>?ref=<sha>` (per-file fetch, base64-decoded), no full clone |
+
+## Imported files (upstream path → local path)
+
+All files below are **byte-identical** to the upstream blob at the commit above
+except `scripts/clawbio/__init__.py`, which is a local replacement (see
+"Local changes").
+
+| Upstream path | Local path | SHA-256 of upstream blob |
+|---|---|---|
+| `skills/pharmgx-reporter/pharmgx_reporter.py` | `scripts/pharmgx_reporter.py` | `20900eba66e6a427b04fd505c384df2a9a684596e392a7951a6b9d3319e3e8e2` |
+| `skills/pharmgx-reporter/demo_patient.txt` | `demo/demo_patient.txt` | `ffe44b340edfbb21abf648f00c2ce68715f5c9453a590caef753bc25e316c5cc` |
+| `skills/pharmgx-reporter/demo_report/report.md` | `demo/expected_report.md` | `c24a8c23875967ac5bf056c44894cb9d609596b74efd549acf4fd1e753cededc` |
+| `clawbio/__init__.py` | `scripts/clawbio/__init__.py` | replaced, see below (`0e43e2918df10d4ffb59bd0afc86a09a7f00adca93e7292d79b58b527a1ac641` upstream) |
+| `clawbio/common/__init__.py` | `scripts/clawbio/common/__init__.py` | `fdccaac72267b26e885541e6a352f84a95ca5f6720e4dcefadd06e30490c43a5` |
+| `clawbio/common/parsers.py` | `scripts/clawbio/common/parsers.py` | `7bba9f29660cc3eb8c86382869c3174bdb0dceb6347b539de4c73171ed3bb84a` |
+| `clawbio/common/checksums.py` | `scripts/clawbio/common/checksums.py` | `03768e23de72eb8000567402292249c686f37fa01ef23b93ac41b5b551c5c04a` |
+| `clawbio/common/report.py` | `scripts/clawbio/common/report.py` | `88add2066801a2dc5f30abc515e3303fb7e172e453bd0d13899ef248a87486af` |
+| `clawbio/common/audit.py` | `scripts/clawbio/common/audit.py` | `9bcc51ceed3681e241066c9f5ba404c642fd506b0fa32283a5d097a1efb6b3bc` |
+| `clawbio/common/html_report.py` | `scripts/clawbio/common/html_report.py` | `a4a23a224969bba940a5efa884aba424bfdb90f0099f0856761a131231cb126c` |
+| `clawbio/common/rec_shortener.py` | `scripts/clawbio/common/rec_shortener.py` | `dddbb0eac58e1e5d32902b11825e09951cc2de7225ade79ad218f4ada0ec50bc` |
+
+## Vendored modules
+
+`scripts/clawbio/` is a vendored subset of the upstream `clawbio` package:
+
+- `__init__.py` — replaced by a **minimal** module exposing only `__version__ = "0.7.1"`.
+  Upstream's `__init__.py` also does `from .runner import list_skills, run_skill,
+  upload_profile`, which pulls in the full ClawBio skill runner (plugin/runner
+  machinery). That runner is intentionally **not** vendored and not used here.
+- `common/__init__.py` — unmodified; its PEP 562 lazy exports are safe because
+  only the vendored submodules are ever imported.
+- `common/parsers.py` — unmodified; stdlib-only at import time (`numpy` is
+  imported lazily inside `parse_vcf_matrix`, which this skill does not call).
+- `common/checksums.py` — unmodified; stdlib only.
+- `common/report.py` — unmodified; imports `common.audit` and `common.checksums`.
+- `common/audit.py` — unmodified; `opentelemetry` imports are `TYPE_CHECKING`
+  or inside functions, so runtime needs only the stdlib. This skill does not
+  write the audit log (the CLI never calls `write_audit_log`).
+- `common/html_report.py` — unmodified; imports `report.DISCLAIMER`.
+- `common/rec_shortener.py` — **added beyond the original vendor list** because
+  the current `pharmgx_reporter.py` lazily imports it in
+  `extract_phenotype_recs()` when ClinPGx enrichment is available. It is
+  stdlib-only (`re`, `html.parser`). Without it that optional path would raise
+  ImportError; the default offline CLI path does not touch it.
+
+Vendored modules depend on the Python standard library only. The skill was
+verified offline with Python 3.11+.
+
+## Local changes
+
+1. **`SKILL.md` rewritten** for bioagent: Chinese body, frontmatter reduced to
+   `name` + `description` only. Upstream `license:`/`metadata:`/`openclaw:`
+   blocks (triggers, emoji, homepage, os, runner integration) are dropped.
+   Upstream `openclaw` metadata, runner/plugin commands, and `INTENTS.json`
+   routing are not used by this skill.
+2. **`scripts/clawbio/__init__.py` replaced** with a minimal module exposing
+   only `__version__` (no `.runner` import).
+3. **Directory layout changed**: upstream `skills/pharmgx-reporter/pharmgx_reporter.py`
+   moved to `scripts/pharmgx_reporter.py`; `demo_patient.txt` moved to
+   `demo/demo_patient.txt`; `demo_report/report.md` moved to
+   `demo/expected_report.md`. Run with `PYTHONPATH=scripts` so that
+   `import clawbio.common.*` resolves to the vendored copy.
+4. **`LICENSE` and `NOTICE` added** (this file). `LICENSE` reproduces the
+   upstream MIT text and copyright.
+5. **Not imported**: upstream `skills/pharmgx-reporter/{api.py, INTENTS.json,
+   tests/, evals/, examples/}` — they are tied to the upstream project layout
+   and/or ClawBio's runner/intent/plugin machinery. The CLI skill does not
+   need them.
+
+**No upstream business logic was modified**: `pharmgx_reporter.py` and all
+vendored `clawbio/common/*.py` files are byte-identical to the upstream blobs
+listed above.
+
+## Verification performed
+
+```bash
+cd agent-client/skills/生信分析/pharmgx-reporter
+PYTHONPATH=scripts python3 scripts/pharmgx_reporter.py --help
+PYTHONPATH=scripts python3 scripts/pharmgx_reporter.py \
+  --input demo/demo_patient.txt --output /tmp/pgx-demo --no-enrich
+```
+
+Result: exit 0; produced non-empty `report.md`, `report.html`, `result.json`,
+`reproducibility/commands.sh`; disclaimer present in `report.md` and
+`report.html`; `report.md` differs from `demo/expected_report.md` only in the
+generated `**Date**` line (same input SHA-256).
+
+## Notes / cautions
+
+- Research/education use only — not a medical device and not a clinical
+  diagnosis. See the disclaimer embedded in every generated report and in
+  `SKILL.md`.
+- The upstream `main` branch has moved past the advertised "12 genes / 31 SNPs
+  / 51 drugs" wording (currently 13 genes / 33 SNPs / 59 drugs). The
+  frontmatter `description` was supplied by the importing project and is kept
+  verbatim.
+- Upstream may change without notice; re-import from the pinned commit above
+  for reproducibility.

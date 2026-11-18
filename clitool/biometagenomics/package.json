@@ -1,0 +1,16 @@
+{
+  "name": "bio-metagenomics",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Shotgun metagenomics behind one CLI: fastp -> host removal -> MEGAHIT/SPAdes -> Kraken2/Kaiju -> Taxpasta, with a plan-first contract.",
+  "type": "module",
+  "bin": {
+    "bio-metagenomics": "./bin/bio-metagenomics.js"
+  },
+  "scripts": {
+    "test": "node --test"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

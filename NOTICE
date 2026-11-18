@@ -1,0 +1,15 @@
+Bioflow Agent
+Copyright 2026 Bioflow contributors
+
+This product includes third-party software and content. The following are
+provided under their original licenses; see the corresponding directories and
+upstream projects for the full license texts.
+
+- Qwen3.5 base models: governed by the Qwen model license.
+- Agent skills and knowledge entries under agent-client/skills and
+  agent-client/knowledgebase: adapted from public sources; each entry retains
+  its upstream license and attribution where applicable.
+- Node.js and Python dependencies: see package.json / requirements.txt and the
+  installed packages for their licenses.
+
+If you believe a component is misattributed, please open an issue.

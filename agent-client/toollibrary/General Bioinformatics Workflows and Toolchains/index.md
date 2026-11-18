@@ -1,0 +1,22 @@
+# General Bioinformatics Workflows and Toolchains
+
+## Skills
+
+- bio-align（skill：bio-align）：Plan or run a minimal read-alignment pipeline: fastp -> STAR/HISAT2/BWA/Salmon -> featureCounts, with a dependency check and a manifest. The default environment still needs provisioning.
+- bio-metagenomics（skill：bio-metagenomics）：Plan or run a minimal shotgun-metagenomics pipeline: fastp -> host removal -> MEGAHIT/SPAdes -> Kraken2/Kaiju -> Taxpasta, with a dependency check and a manifest.
+
+- bio-qc（skill：bio-qc）：FASTQ/BAM/expression-matrix QC metrics behind one CLI: reads, bases, Q20/Q30, GC, duplication, mapping, and a JSON/TSV/manifest bundle.
+
+- bio-doctor（skill：bio-doctor）：Check whether Bioagent's local WSL or future laboratory-server capability profiles are actually available. Use before claiming that a local dependency, R package, Bio CLI, or heavy workflow environment can be executed.
+- bio-fetch（skill：bio-fetch）：Fetch public NCBI genome packages or an SRA run converted to FASTQ with explicit output paths and reproducibility manifests. Use after an accession is known; use science-search first when discovery or metadata lookup is needed.
+- bio-seq（skill：bio-seq）：Validate DNA/RNA or protein sequence records, translate nucleotide sequences, and submit a small single-sequence remote NCBI BLAST query. Use for new sequences that cannot be answered by annotated-record lookup alone.
+- bio-variant（skill：bio-variant）：Annotate small batches of human SNVs and short indels through Ensembl VEP. Use for genomic-coordinate variants or VCF records when gene/transcript consequences, HGVS terms, and co-located clinical-significance evidence are needed.
+- bio-peak（skill：bio-peak）：Call peaks with MACS2, discover motifs with HOMER, and create transparent promoter/nearest-TSS peak-to-gene candidates. Use only with an explicit genome assembly and interpret all results as candidate evidence rather than validated regulation.
+- bio-enrich（skill：bio-enrich）：Run gene-list functional enrichment through g:Profiler or Enrichr. Use for GO, Reactome, KEGG, and other gene-set over-representation questions after obtaining a gene list.
+- bio-grn（skill：bio-grn）：Infer candidate transcription-factor-to-target-gene regulatory associations from a validated bulk or single-cell expression matrix using Arboreto GRNBoost2 or GENIE3. Use when an expression-based GRN is needed; do not present the result as causal or direct binding evidence.
+- bio-regulatory（skill：bio-regulatory）：Prepare versioned CpG-island, ChromHMM, ENCODE peak, or ReMap TF-binding evidence datasets, then query them by gene or genomic region. Use for coordinate-level regulatory context; do not interpret an overlap as proof of functional regulation.
+- bio-epiedit（skill：bio-epiedit）：Rank supplied CRISPRi, CRISPRa, or CRISPRoff guide candidates with explicit sequence, off-target, and regulatory-coordinate evidence. Use for transparent experimental prioritization; it does not generate guides or claim editing efficacy.
+- bio-multiome（skill：bio-multiome）：Validate aligned scRNA/scATAC TSV exports and derive group-wise RNA/ATAC candidate evidence edges from peak-gene links. Use after preprocessing or scVI/MultiVI integration; it does not train models or establish regulatory causality.
+- bio-workflow（skill：bio-workflow）：Plan reviewed RNA-seq, CUT&Tag, or DNA-seq analysis workflows derived from Bioagent compute scripts. Use to inspect required inputs, artifacts, tools, resource hints, and dependencies; this release does not execute workflows.
+- bio-longread-variant（skill：bio-longread-variant）：Generate and troubleshoot long-read variant-calling commands with the Clair3 family (Clair3, Clair3-RNA, ClairS, ClairS-TO, Clair-Mosaic): platform/model selection, preprocessing checks, Docker/conda preflight, parameterised command templates and post-processing. Use for ONT/PacBio germline, somatic or mosaic detection on a laboratory server; never claims local execution.
+- bio-variant-effect（skill：bio-variant-effect）：Query AlphaGenome variant-effect predictions with the official Python client (gRPC API) for SNVs/indels: chromatin, splicing, expression and regulatory impact evidence after VEP/ClinVar annotation; requires ALPHA_GENOME_API_KEY (ALPHAGENOME_API_KEY accepted as an alias) and is research-use only.

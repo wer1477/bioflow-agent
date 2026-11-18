@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+# bioflow 启动入口(Linux/macOS;Windows 下曾用 bioflow.cmd)
+# 转发到 bin/bioflow.mjs,保留所有参数与退出码。
+set -e
+DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+exec node "$DIR/bin/bioflow.mjs" "$@"

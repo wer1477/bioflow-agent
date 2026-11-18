@@ -1,0 +1,16 @@
+{
+  "name": "bio-align",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Read alignment and quantification behind one CLI: fastp -> STAR/hisat2/bwa/Salmon -> featureCounts, with a plan-first contract.",
+  "type": "module",
+  "bin": {
+    "bio-align": "./bin/bio-align.js"
+  },
+  "scripts": {
+    "test": "node --test"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

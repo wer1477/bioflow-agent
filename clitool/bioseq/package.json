@@ -1,0 +1,16 @@
+{
+  "name": "bio-seq",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Machine-friendly sequence validation, translation, and remote NCBI BLAST submission.",
+  "type": "module",
+  "bin": {
+    "bio-seq": "./bin/bio-seq.js"
+  },
+  "scripts": {
+    "test": "node --test"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

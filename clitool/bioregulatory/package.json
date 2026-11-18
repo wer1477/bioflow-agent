@@ -1,0 +1,16 @@
+{
+  "name": "bio-regulatory",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Machine-friendly preparation and coordinate queries for versioned regulatory evidence datasets.",
+  "type": "module",
+  "bin": {
+    "bio-regulatory": "./bin/bio-regulatory.js"
+  },
+  "scripts": {
+    "test": "node --test"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

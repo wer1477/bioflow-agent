@@ -1,0 +1,16 @@
+{
+  "name": "bio-report",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Assemble reproducible Markdown and PDF analysis reports from manifests, result tables, figures, and methods notes.",
+  "type": "module",
+  "bin": {
+    "bio-report": "./bin/bio-report.js"
+  },
+  "scripts": {
+    "test": "node --test"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

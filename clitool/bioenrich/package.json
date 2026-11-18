@@ -1,0 +1,16 @@
+{
+  "name": "bio-enrich",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Machine-friendly gene-list enrichment through g:Profiler and Enrichr.",
+  "type": "module",
+  "bin": {
+    "bio-enrich": "./bin/bio-enrich.js"
+  },
+  "scripts": {
+    "test": "node --test"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

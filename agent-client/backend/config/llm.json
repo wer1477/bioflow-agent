@@ -1,0 +1,287 @@
+{
+  "schemaVersion": 2,
+  "defaultProviderId": "dgx",
+  "providers": [
+    {
+      "id": "dgx",
+      "presetId": "custom",
+      "name": "dgx",
+      "baseUrl": "https://your-llm-endpoint/v1",
+      "apiKey": "${BIOFLOW_LLM_API_KEY_DGX}",
+      "thinkingFormat": "openai-effort",
+      "cacheReport": "hits-only",
+      "defaultModelId": "RadixArk/Qwen3.8-Flash-Next-NVFP4",
+      "models": [
+        {
+          "id": "RadixArk/Qwen3.8-Flash-Next-NVFP4",
+          "label": "RadixArk/Qwen3.8-Flash-Next-NVFP4",
+          "contextWindowTokens": 1000000,
+          "reasoningEfforts": {
+            "medium": "medium"
+          },
+          "defaultThinkingLevel": "medium",
+          "metadataSource": "manual",
+          "updatedAt": "2026-10-01T09:57:55.000Z"
+        }
+      ],
+      "createdAt": "2026-10-01T09:57:55.000Z",
+      "updatedAt": "2026-10-01T09:57:55.000Z"
+    },
+    {
+      "id": "opencode-go-2",
+      "presetId": "opencode-go",
+      "name": "OpenCode Go（账户 2）",
+      "baseUrl": "https://opencode.ai/zen/go/v1",
+      "apiKey": "${BIOFLOW_LLM_API_KEY_OPENCODE_GO_2}",
+      "headers": {
+        "x-opencode-session": "5f8da94d-4cc1-4404-aef6-bc36221d4962"
+      },
+      "thinkingFormat": "openai-effort",
+      "cacheReport": "full",
+      "defaultModelId": "deepseek-v4.1-flash",
+      "models": [
+        {
+          "id": "deepseek-v4.1-flash",
+          "label": "DeepSeek V4.1 Flash",
+          "contextWindowTokens": 1000000,
+          "reasoningEfforts": {
+            "low": "low",
+            "high": "high",
+            "max": "max"
+          },
+          "defaultThinkingLevel": "high",
+          "capabilities": {
+            "tools": true,
+            "images": true
+          },
+          "metadataSource": "manual"
+        },
+        {
+          "id": "deepseek-v4-pro",
+          "label": "DeepSeek V4 Pro",
+          "contextWindowTokens": 1000000,
+          "reasoningEfforts": {
+            "high": "high",
+            "max": "max"
+          },
+          "defaultThinkingLevel": "high",
+          "capabilities": {
+            "tools": true,
+            "images": false
+          },
+          "metadataSource": "manual"
+        },
+        {
+          "id": "glm-5.2",
+          "label": "GLM-5.2",
+          "contextWindowTokens": 1000000,
+          "reasoningEfforts": {
+            "high": "high",
+            "max": "max"
+          },
+          "defaultThinkingLevel": "high",
+          "capabilities": {
+            "tools": true,
+            "images": false
+          },
+          "metadataSource": "manual"
+        },
+        {
+          "id": "glm-5.3",
+          "label": "GLM-5.3",
+          "contextWindowTokens": 1000000,
+          "reasoningEfforts": {
+            "low": "low",
+            "high": "high",
+            "max": "max"
+          },
+          "defaultThinkingLevel": "high",
+          "capabilities": {
+            "tools": true,
+            "images": false
+          },
+          "metadataSource": "manual"
+        },
+        {
+          "id": "glm-5.3-flash",
+          "label": "GLM-5.3-Flash",
+          "contextWindowTokens": 1000000,
+          "reasoningEfforts": {
+            "low": "low",
+            "high": "high",
+            "max": "max"
+          },
+          "defaultThinkingLevel": "high",
+          "capabilities": {
+            "tools": true,
+            "images": true
+          },
+          "metadataSource": "manual"
+        },
+        {
+          "id": "hy3",
+          "label": "Hy3",
+          "contextWindowTokens": 256000,
+          "reasoningEfforts": {
+            "low": "low",
+            "high": "high"
+          },
+          "defaultThinkingLevel": "high",
+          "capabilities": {
+            "tools": true,
+            "images": false
+          },
+          "metadataSource": "manual"
+        },
+        {
+          "id": "hy4-preview",
+          "label": "Hy4 preview",
+          "contextWindowTokens": 1024000,
+          "reasoningEfforts": {
+            "high": "high"
+          },
+          "defaultThinkingLevel": "high",
+          "capabilities": {
+            "tools": true,
+            "images": false
+          },
+          "metadataSource": "manual"
+        },
+        {
+          "id": "kimi-k2.7-code",
+          "label": "Kimi K2.7 Code",
+          "contextWindowTokens": 262144,
+          "capabilities": {
+            "tools": true,
+            "images": true
+          },
+          "metadataSource": "manual"
+        },
+        {
+          "id": "kimi-k3",
+          "label": "Kimi K3",
+          "contextWindowTokens": 1048576,
+          "reasoningEfforts": {
+            "max": "max"
+          },
+          "defaultThinkingLevel": "max",
+          "capabilities": {
+            "tools": true,
+            "images": true
+          },
+          "metadataSource": "manual"
+        },
+        {
+          "id": "mimo-v2.6-flash",
+          "label": "MiMo-V2.6-Flash",
+          "contextWindowTokens": 1048576,
+          "capabilities": {
+            "tools": true,
+            "images": true
+          },
+          "metadataSource": "manual"
+        },
+        {
+          "id": "mimo-v2.6-pro",
+          "label": "MiMo-V2.6-Pro",
+          "contextWindowTokens": 1048576,
+          "capabilities": {
+            "tools": true,
+            "images": true
+          },
+          "metadataSource": "manual"
+        },
+        {
+          "id": "longcat-2.0",
+          "label": "LongCat-2.0",
+          "contextWindowTokens": 1000000,
+          "capabilities": {
+            "tools": true,
+            "images": false
+          },
+          "metadataSource": "manual"
+        },
+        {
+          "id": "step-5-preview",
+          "label": "Step 5 Preview",
+          "contextWindowTokens": 1000000,
+          "reasoningEfforts": {
+            "low": "low",
+            "medium": "medium",
+            "high": "high"
+          },
+          "defaultThinkingLevel": "high",
+          "capabilities": {
+            "tools": true,
+            "images": true
+          },
+          "metadataSource": "manual"
+        },
+        {
+          "id": "minimax-m3.1-flash",
+          "label": "MiniMax M3.1 Flash",
+          "contextWindowTokens": 1000000,
+          "reasoningEfforts": {
+            "low": "low",
+            "medium": "medium",
+            "high": "high",
+            "xhigh": "xhigh",
+            "max": "max"
+          },
+          "defaultThinkingLevel": "high",
+          "capabilities": {
+            "tools": true,
+            "images": true
+          },
+          "metadataSource": "manual"
+        },
+        {
+          "id": "kimi-k3.1-pro",
+          "label": "Kimi K3.1 Pro",
+          "contextWindowTokens": 1048576,
+          "reasoningEfforts": {
+            "low": "low",
+            "high": "high",
+            "max": "max"
+          },
+          "defaultThinkingLevel": "high",
+          "capabilities": {
+            "tools": true,
+            "images": true
+          },
+          "metadataSource": "manual"
+        },
+        {
+          "id": "iceman-contributor-free",
+          "label": "Iceman Contributor Free",
+          "contextWindowTokens": 262144,
+          "capabilities": {
+            "tools": true,
+            "images": false
+          },
+          "metadataSource": "manual"
+        },
+        {
+          "id": "beam-free",
+          "label": "Beam Free",
+          "contextWindowTokens": 1048576,
+          "reasoningEfforts": {
+            "low": "low",
+            "medium": "medium",
+            "high": "high",
+            "xhigh": "xhigh",
+            "max": "max"
+          },
+          "defaultThinkingLevel": "high",
+          "capabilities": {
+            "tools": true,
+            "images": false
+          },
+          "metadataSource": "manual"
+        }
+      ],
+      "createdAt": "2026-11-06T14:16:50Z",
+      "updatedAt": "2026-11-06T14:16:50Z"
+    }
+  ]
+}

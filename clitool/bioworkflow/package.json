@@ -1,0 +1,10 @@
+{
+  "name": "bio-workflow",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Machine-first planning for reviewed bioinformatics workflow templates.",
+  "type": "module",
+  "bin": { "bio-workflow": "./bin/bio-workflow.js" },
+  "scripts": { "test": "node --test" },
+  "engines": { "node": ">=20" }
+}

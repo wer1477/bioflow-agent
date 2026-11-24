@@ -8,9 +8,6 @@ import { loadBiodConfig, type BiodConfig } from '../src/agent/biod/config.js';
 import { BiodService } from '../src/agent/biod/service.js';
 import { executeHypothesisScreenTool } from '../src/agent/biod/searcher/tool.js';
 import { parseHypothesesYaml } from '../src/agent/biod/searcher/yaml.js';
-import { RuntimeToolDispatcher } from '../src/agent/runtime_tool_dispatcher.js';
-import { buildCoreToolsForAgent } from '../src/agent/core_tools_runtime.js';
-import { TOOLLIBRARY_TOOL_NAME } from '../src/agent/core_tools/ids.js';
 
 const tempDirectories: string[] = [];
 after(() => {
@@ -321,78 +318,4 @@ test('executeHypothesisScreenTool in shadow mode returns counts but writes no re
   assert.equal(output.summary?.shortlist, undefined);
   assert.equal(output.summary?.shortlistCount, 3);
   assert.equal(fs.existsSync(path.join(project, 'research', 'hypothesis-screen-hypotheses.md')), false);
-});
-
-test('the toollibrary schema advertises hypothesis-screen for the searcher', () => {
-  const tools = buildCoreToolsForAgent({ id: 'searcher', coreToolIds: ['toollibrary'] } as never);
-  const toollibrary = tools.find((tool) => tool.function.name === TOOLLIBRARY_TOOL_NAME);
-  assert.ok(toollibrary);
-  const action = toollibrary?.function.parameters?.properties?.action as { enum?: string[] } | undefined;
-  assert.ok(action?.enum?.includes('hypothesis-screen'));
-});
-
-test('toollibrary action=hypothesis-screen is wired through the dispatcher with a role gate', async () => {
-  const project = tempProject();
-  writeHypotheses(project);
-  const dispatcher = new RuntimeToolDispatcher({
-    request: {
-      llm: { baseUrl: 'http://example.test/v1', apiKey: 'unused', model: 'test' },
-      messages: [],
-      userMessage: 'screen the hypotheses',
-      conversationId: 'conversation-s2',
-      mainAgent: { id: 'searcher', promptFile: 'prompts/searcher.md' } as never,
-      mcpServers: [],
-      skills: [],
-    },
-    manager: {} as never,
-    mcpToolsByName: new Map(),
-    mcpServers: [],
-    addTools: () => [],
-    runInstanceId: 'run-s2',
-    projectPath: project,
-    biod: service(project),
-  });
-
-  const parsed = JSON.parse((await dispatcher.execute(TOOLLIBRARY_TOOL_NAME, {
-    action: 'hypothesis-screen',
-    path: 'research/hypotheses.yaml',
-  })).result) as { ok: boolean; reportPath?: string };
-  assert.equal(parsed.ok, true);
-  assert.equal(parsed.reportPath, 'research/hypothesis-screen-hypotheses.md');
-
-  const wrongRole = new RuntimeToolDispatcher({
-    request: {
-      llm: { baseUrl: 'http://example.test/v1', apiKey: 'unused', model: 'test' },
-      messages: [],
-      userMessage: 'screen the hypotheses',
-      conversationId: 'conversation-s2-wrong',
-      mainAgent: { id: 'researcher', promptFile: 'prompts/researcher.md' } as never,
-      mcpServers: [],
-      skills: [],
-    },
-    manager: {} as never,
-    mcpToolsByName: new Map(),
-    mcpServers: [],
-    addTools: () => [],
-    runInstanceId: 'run-s2-wrong',
-    projectPath: project,
-    biod: service(project),
-  });
-  const denied = JSON.parse((await wrongRole.execute(TOOLLIBRARY_TOOL_NAME, {
-    action: 'hypothesis-screen',
-    path: 'research/hypotheses.yaml',
-  })).result) as { ok: boolean; error: string };
-  assert.equal(denied.ok, false);
-  assert.match(denied.error, /only available to the searcher role/);
-});
-
-test('the shipped config enables S2 assist and keeps optional S3/S5 off', () => {
-  const configDirectory = fileURLToPath(new URL('../config', import.meta.url));
-  const parsed = loadBiodConfig(configDirectory, {});
-  assert.equal(parsed.framework?.enabled, true);
-  assert.equal(parsed.framework?.decisionPoints['s2.premise']?.mode, 'assist');
-  assert.equal(parsed.framework?.decisionPoints['s2.rerank']?.mode, 'assist');
-  assert.equal(parsed.framework?.decisionPoints['s2.policy']?.mode, 'assist');
-  assert.equal(parsed.framework?.decisionPoints['s3.trigger']?.mode, 'off');
-  assert.equal(parsed.framework?.decisionPoints['s5.diversity']?.mode, 'off');
 });

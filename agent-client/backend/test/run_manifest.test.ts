@@ -212,3 +212,60 @@ test('writes a manifest next to the session and reads it back', async () => {
     project.cleanup();
   }
 });
+
+test('declared input provenance populates manifest.inputs with verified hashes', async () => {
+  const project = createTempProject('run-manifest-inputs');
+  try {
+    const input = path.join(project.projectPath, 'data', 'counts.csv');
+    fs.mkdirSync(path.dirname(input), { recursive: true });
+    const body = 'gene,c1\nA,1\n';
+    fs.writeFileSync(input, body, 'utf8');
+    const digest = crypto.createHash('sha256').update(body).digest('hex');
+    fs.mkdirSync(path.join(project.projectPath, '.bioflow'), { recursive: true });
+    fs.writeFileSync(path.join(project.projectPath, '.bioflow', 'inputs.json'), JSON.stringify({
+      inputs: [{ path: 'data/counts.csv', sha256: digest, version: 'input-v1' }],
+    }), 'utf8');
+
+    const manifest = await buildRunManifest({
+      conversationId: 'conversation-1',
+      run: runFixture(),
+      records: [],
+      environment: ENVIRONMENT,
+      projectPath: project.projectPath,
+      scanProject: false,
+    });
+
+    assert.equal(manifest.inputs.length, 1);
+    assert.equal(manifest.inputs[0].path, path.join('data', 'counts.csv'));
+    assert.equal(manifest.inputs[0].sha256, digest);
+    assert.equal(manifest.inputs[0].version, 'input-v1');
+    assert.equal(manifest.inputs[0].match, true);
+    assert.deepEqual(manifest.warnings, []);
+  } finally {
+    project.cleanup();
+  }
+});
+
+test('a declared input mismatch is visible instead of silently trusted', async () => {
+  const project = createTempProject('run-manifest-input-mismatch');
+  try {
+    fs.mkdirSync(path.join(project.projectPath, 'data'), { recursive: true });
+    fs.writeFileSync(path.join(project.projectPath, 'data', 'counts.csv'), 'a\n1\n', 'utf8');
+    fs.mkdirSync(path.join(project.projectPath, '.bioflow'), { recursive: true });
+    fs.writeFileSync(path.join(project.projectPath, '.bioflow', 'inputs.json'), JSON.stringify({
+      inputs: [{ path: 'data/counts.csv', sha256: '0'.repeat(64) }],
+    }), 'utf8');
+    const manifest = await buildRunManifest({
+      conversationId: 'conversation-1',
+      run: runFixture(),
+      records: [],
+      environment: ENVIRONMENT,
+      projectPath: project.projectPath,
+      scanProject: false,
+    });
+    assert.equal(manifest.inputs[0].match, false);
+    assert.ok(manifest.warnings.some((warning) => warning.startsWith('input_sha256_mismatch')));
+  } finally {
+    project.cleanup();
+  }
+});

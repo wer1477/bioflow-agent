@@ -46,14 +46,14 @@ function kbDecision(overrides: Partial<BiodKbDecision> = {}): BiodKbDecision {
 }
 
 function createDispatcher(biod: {
-  decideTool: (input: { state: string; candidates: unknown[] }) => Promise<unknown>;
-  decideKnowledge: (input: { state: string; candidates: unknown[] }) => Promise<unknown>;
-}, mainAgent?: { id: string; coreToolIds: string[] }): RuntimeToolDispatcher {
+  decideTool: (input: { state: string; candidates: unknown[]; catalog?: Record<string, unknown> }) => Promise<unknown>;
+  decideKnowledge: (input: { state: string; candidates: unknown[]; catalog?: Record<string, unknown> }) => Promise<unknown>;
+}, mainAgent?: { id: string; coreToolIds: string[] }, userMessage = 'Use scanpy to cluster the single-cell matrix.'): RuntimeToolDispatcher {
   return new RuntimeToolDispatcher({
     request: {
       llm: { baseUrl: 'http://example.test/v1', apiKey: 'unused', model: 'test' },
       messages: [],
-      userMessage: 'Use scanpy to cluster the single-cell matrix.',
+      userMessage,
       mcpServers: [],
       skills: [skill] as never,
       mainAgent,
@@ -68,12 +68,22 @@ function createDispatcher(biod: {
 }
 
 test('toollibrary defaults to biod selection and loads the chosen skill', async () => {
+  let seen: { candidates: Array<Record<string, unknown>>; catalog?: Record<string, unknown> } | null = null;
   const dispatcher = createDispatcher({
-    async decideTool() { return toolDecision(); },
+    async decideTool(input) {
+      seen = { candidates: input.candidates as Array<Record<string, unknown>>, catalog: input.catalog };
+      return toolDecision();
+    },
     async decideKnowledge() { throw new Error('not used'); },
   });
 
   const parsed = JSON.parse((await dispatcher.execute(TOOLLIBRARY_TOOL_NAME, {})).result);
+  assert.ok(seen);
+  assert.ok(seen.candidates.length > 0);
+  assert.equal(typeof seen.candidates[0].description, 'string');
+  assert.equal(seen.catalog?.id, 'toollibrary');
+  assert.equal(String(seen.catalog?.fingerprint).length, 64);
+  assert.equal(seen.catalog?.shortlist, seen.candidates.length);
 
   assert.equal(parsed.ok, true);
   assert.equal(parsed.action, 'select');
@@ -132,12 +142,20 @@ test('explicit catalog browsing never calls the decision layer', async () => {
 });
 
 test('knowledgebase select returns only the chosen entry bodies', async () => {
+  let seen: { candidates: Array<Record<string, unknown>>; catalog?: Record<string, unknown> } | null = null;
   const dispatcher = createDispatcher({
     async decideTool() { throw new Error('not used'); },
-    async decideKnowledge() { return kbDecision(); },
+    async decideKnowledge(input) {
+      seen = { candidates: input.candidates as Array<Record<string, unknown>>, catalog: input.catalog };
+      return kbDecision();
+    },
   });
 
   const parsed = JSON.parse((await dispatcher.execute(KNOWLEDGEBASE_TOOL_NAME, { action: 'select' })).result);
+  assert.ok(seen);
+  assert.ok(seen.candidates.length > 0);
+  assert.equal(seen.catalog?.id, 'knowledgebase');
+  assert.equal(typeof seen.candidates[0].description, 'string');
 
   assert.equal(parsed.ok, true);
   assert.equal(parsed.action, 'select');
@@ -163,6 +181,20 @@ test('knowledgebase select falls back to the index on failure or empty selection
   const emptyParsed = JSON.parse((await empty.execute(KNOWLEDGEBASE_TOOL_NAME, { action: 'select' })).result);
   assert.equal(emptyParsed.action, 'index');
   assert.equal(emptyParsed.biod.reason, 'no_selection');
+});
+
+test('a zero lexical signal over a large catalog defers instead of trusting the cut', async () => {
+  let called = false;
+  const dispatcher = createDispatcher({
+    async decideTool() { throw new Error('not used'); },
+    async decideKnowledge() { called = true; return kbDecision(); },
+  }, undefined, '完成一个完全无关的中文任务');
+  const parsed = JSON.parse((await dispatcher.execute(KNOWLEDGEBASE_TOOL_NAME, { action: 'select' })).result);
+  assert.equal(called, false);
+  assert.equal(parsed.biod.reason, 'no_lexical_signal');
+  assert.equal(parsed.biod.decision.shortlistSignal, 'none');
+  assert.equal(parsed.biod.decision.shortlistFallback, 'no_lexical_signal');
+  assert.ok(parsed.biod.decision.shortlistDropped > 0);
 });
 
 test('cold-zone scorer uses biod scores and falls back to the deterministic prior', async () => {

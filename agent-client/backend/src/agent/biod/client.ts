@@ -1,6 +1,8 @@
 import { randomUUID } from 'node:crypto';
 import type {
   BiodCandidate,
+  BiodCandidateTransport,
+  BiodCatalogMeta,
   BiodFailure,
   BiodGroupScore,
   BiodGroupScores,
@@ -9,6 +11,7 @@ import type {
   BiodScore,
   BiodToolDecision,
 } from './types.js';
+import { candidateFingerprint, prepareCandidatePayload } from './candidate_shortlist.js';
 
 /**
  * HTTP client for the biod sidecar.
@@ -44,6 +47,8 @@ export interface BiodVersion {
   modelVersion?: string;
   /** Candidate vocabulary of the loaded checkpoint; used to mask runtime-only ids. */
   optionIds?: { tool: string[]; kb: string[] };
+  /** Newer sidecars render arbitrary candidate cards, not only checkpoint ids. */
+  supportsCandidateDescriptions?: boolean;
   error?: string;
 }
 
@@ -55,12 +60,16 @@ export interface BiodClient {
     candidates: BiodCandidate[],
     policy: { tau: number },
     signal?: AbortSignal,
+    catalog?: BiodCatalogMeta,
+    options?: { candidates?: 'descriptions' | 'ids' },
   ): Promise<BiodResult<BiodToolDecision>>;
   decideKb(
     state: string,
     candidates: BiodCandidate[],
     policy: { tau: number; topK: number },
     signal?: AbortSignal,
+    catalog?: BiodCatalogMeta,
+    options?: { candidates?: 'descriptions' | 'ids' },
   ): Promise<BiodResult<BiodKbDecision>>;
   scoreGroups(
     state: string,
@@ -134,6 +143,7 @@ export class HttpBiodClient implements BiodClient {
       optionIds: ids && Array.isArray(ids.tool) && Array.isArray(ids.kb)
         ? { tool: ids.tool.filter((id): id is string => typeof id === 'string'), kb: ids.kb.filter((id): id is string => typeof id === 'string') }
         : undefined,
+      supportsCandidateDescriptions: body.supportsCandidateDescriptions === true,
       error: text(body.error) ?? (body.ok === true ? undefined : 'version check failed'),
     };
   }
@@ -143,23 +153,15 @@ export class HttpBiodClient implements BiodClient {
     candidates: BiodCandidate[],
     policy: { tau: number },
     signal?: AbortSignal,
+    catalog?: BiodCatalogMeta,
+    options?: { candidates?: 'descriptions' | 'ids' },
   ): Promise<BiodResult<BiodToolDecision>> {
     if (!candidates.length) return { ok: false, reason: 'catalog_mismatch', message: 'biod decideTool received no candidates' };
-    const response = await this.request('/v1/decide', {
-      method: 'POST',
-      timeoutMs: this.requestTimeoutMs,
-      signal,
-      countsTowardCircuit: true,
-      body: {
-        requestId: randomUUID(),
-        kind: 'tool',
-        state,
-        candidates: candidates.map((candidate) => candidate.id),
-        policy: { tau: policy.tau },
-      },
-    });
+    const { response, transport } = await this.sendDecision(
+      'tool', state, candidates, { tau: policy.tau }, signal, catalog, options?.candidates ?? 'descriptions',
+    );
     if (!response.ok) return response.failure;
-    const decision = toToolDecision(response.body);
+    const decision = toToolDecision(response.body, transport);
     if (!decision) {
       this.recordFailure(true);
       return { ok: false, reason: 'bad_response', message: 'invalid tool decision payload' };
@@ -172,8 +174,56 @@ export class HttpBiodClient implements BiodClient {
     candidates: BiodCandidate[],
     policy: { tau: number; topK: number },
     signal?: AbortSignal,
+    catalog?: BiodCatalogMeta,
+    options?: { candidates?: 'descriptions' | 'ids' },
   ): Promise<BiodResult<BiodKbDecision>> {
     if (!candidates.length) return { ok: false, reason: 'catalog_mismatch', message: 'biod decideKb received no candidates' };
+    const { response, transport } = await this.sendDecision(
+      'kb',
+      state,
+      candidates,
+      { tau: policy.tau, topK: policy.topK },
+      signal,
+      catalog,
+      options?.candidates ?? 'descriptions',
+    );
+    if (!response.ok) return response.failure;
+    const decision = toKbDecision(response.body, transport);
+    if (!decision) {
+      this.recordFailure(true);
+      return { ok: false, reason: 'bad_response', message: 'invalid knowledge decision payload' };
+    }
+    return decision;
+  }
+
+  /**
+   * Send one decision request with full candidate cards (or ids for a legacy sidecar).
+   *
+   * The mode is negotiated from `/v1/version` before the first decision; there is no
+   * per-request 400 retry. The transport records what actually went on the wire.
+   */
+  private async sendDecision(
+    kind: 'tool' | 'kb',
+    state: string,
+    candidates: BiodCandidate[],
+    policy: Record<string, number>,
+    signal: AbortSignal | undefined,
+    catalog: BiodCatalogMeta | undefined,
+    mode: 'descriptions' | 'ids',
+  ): Promise<{ response: JsonResponse; transport: BiodCandidateTransport }> {
+    const fingerprint = catalog?.fingerprint ?? candidateFingerprint(candidates);
+    const prepared = mode === 'descriptions'
+      ? prepareCandidatePayload(candidates)
+      : { payload: candidates.map((candidate) => candidate.id), candidateCount: candidates.length, descriptionChars: 0, truncated: false };
+    const transport: BiodCandidateTransport = {
+      mode,
+      candidateCount: prepared.candidateCount,
+      descriptionChars: prepared.descriptionChars,
+      truncated: prepared.truncated,
+      catalogFingerprint: fingerprint,
+      catalogTotal: catalog?.total ?? candidates.length,
+      shortlist: prepared.candidateCount,
+    };
     const response = await this.request('/v1/decide', {
       method: 'POST',
       timeoutMs: this.requestTimeoutMs,
@@ -181,19 +231,21 @@ export class HttpBiodClient implements BiodClient {
       countsTowardCircuit: true,
       body: {
         requestId: randomUUID(),
-        kind: 'kb',
+        kind,
         state,
-        candidates: candidates.map((candidate) => candidate.id),
-        policy: { tau: policy.tau, topK: policy.topK },
+        candidates: prepared.payload,
+        catalog: {
+          id: catalog?.id ?? (kind === 'tool' ? 'toollibrary' : 'knowledgebase'),
+          fingerprint,
+          total: transport.catalogTotal,
+          shortlist: transport.shortlist,
+          descriptionChars: transport.descriptionChars,
+          truncated: transport.truncated,
+        },
+        policy,
       },
     });
-    if (!response.ok) return response.failure;
-    const decision = toKbDecision(response.body);
-    if (!decision) {
-      this.recordFailure(true);
-      return { ok: false, reason: 'bad_response', message: 'invalid knowledge decision payload' };
-    }
-    return decision;
+    return { response, transport };
   }
 
   async scoreGroups(
@@ -316,16 +368,20 @@ export class HttpBiodClient implements BiodClient {
 
       const body = parseJson(rawText);
       if (!response.ok) {
-        this.recordFailure(options.countsTowardCircuit);
-        return { ok: false, failure: httpFailure(pathname, response.status, body, rawText) };
+        const failure = httpFailure(pathname, response.status, body, rawText);
+        // A prompt that exceeds the checkpoint encoder is an input-budget outcome,
+        // not evidence that the sidecar is unhealthy: do not open the circuit for it.
+        if (failure.reason !== 'prompt_too_long') this.recordFailure(options.countsTowardCircuit);
+        return { ok: false, failure };
       }
       if (body === undefined) {
         this.recordFailure(options.countsTowardCircuit);
         return { ok: false, failure: { ok: false, reason: 'bad_response', message: `biod ${pathname} returned invalid JSON` } };
       }
       if (isRecord(body) && body.ok === false) {
-        this.recordFailure(options.countsTowardCircuit);
-        return { ok: false, failure: envelopeFailure(pathname, body.error, rawText) };
+        const failure = envelopeFailure(pathname, body.error, rawText);
+        if (failure.reason !== 'prompt_too_long') this.recordFailure(options.countsTowardCircuit);
+        return { ok: false, failure };
       }
       this.recordSuccess(options.countsTowardCircuit);
       return { ok: true, body };
@@ -341,6 +397,7 @@ function httpFailure(pathname: string, status: number, body: unknown, rawText: s
   if (envelope.code === 'CKPT_MISMATCH') return { ok: false, reason: 'catalog_mismatch', message: envelope.message };
   if (envelope.code === 'MODEL_NOT_READY') return { ok: false, reason: 'not_ready', message: envelope.message };
   if (envelope.code === 'TIMEOUT') return { ok: false, reason: 'timeout', message: envelope.message };
+  if (envelope.code === 'PROMPT_TOO_LONG') return { ok: false, reason: 'prompt_too_long', message: envelope.message };
   return {
     ok: false,
     reason: 'bad_response',
@@ -353,6 +410,7 @@ function envelopeFailure(pathname: string, error: unknown, rawText: string): Bio
   if (envelope.code === 'CKPT_MISMATCH') return { ok: false, reason: 'catalog_mismatch', message: envelope.message };
   if (envelope.code === 'MODEL_NOT_READY') return { ok: false, reason: 'not_ready', message: envelope.message };
   if (envelope.code === 'TIMEOUT') return { ok: false, reason: 'timeout', message: envelope.message };
+  if (envelope.code === 'PROMPT_TOO_LONG') return { ok: false, reason: 'prompt_too_long', message: envelope.message };
   return {
     ok: false,
     reason: 'bad_response',
@@ -373,7 +431,7 @@ function errorEnvelope(body: unknown, rawText: string): { code: string; message:
   return { code, message: '' };
 }
 
-function toToolDecision(body: unknown): BiodToolDecision | undefined {
+function toToolDecision(body: unknown, transport: BiodCandidateTransport): BiodToolDecision | undefined {
   if (!isRecord(body)) return undefined;
   const chosen = stringArray(body.chosen);
   const scores = scoreArray(body.scores);
@@ -389,10 +447,11 @@ function toToolDecision(body: unknown): BiodToolDecision | undefined {
     latencyMs: number(body.latencyMs) ?? 0,
     modelVersion: text(body.modelVersion) ?? '',
     candidateCount: number(body.candidateCount) ?? scores.length,
+    transport: transportFrom(body.transport, transport),
   };
 }
 
-function toKbDecision(body: unknown): BiodKbDecision | undefined {
+function toKbDecision(body: unknown, transport: BiodCandidateTransport): BiodKbDecision | undefined {
   if (!isRecord(body)) return undefined;
   const chosen = stringArray(body.chosen);
   const scores = scoreArray(body.scores);
@@ -407,6 +466,7 @@ function toKbDecision(body: unknown): BiodKbDecision | undefined {
     latencyMs: number(body.latencyMs) ?? 0,
     modelVersion: text(body.modelVersion) ?? '',
     candidateCount: number(body.candidateCount) ?? scores.length,
+    transport: transportFrom(body.transport, transport),
   };
 }
 
@@ -439,6 +499,27 @@ function scoreArray(value: unknown): BiodScore[] | undefined {
 function stringArray(value: unknown): string[] | undefined {
   if (!Array.isArray(value)) return undefined;
   return value.filter((item): item is string => typeof item === 'string');
+}
+
+function transportFrom(value: unknown, fallback: BiodCandidateTransport): BiodCandidateTransport {
+  if (!isRecord(value)) return fallback;
+  const mode = value.mode === 'ids' || value.mode === 'descriptions' ? value.mode : fallback.mode;
+  const count = nonNegativeNumber(value.candidateCount) ?? fallback.candidateCount;
+  const chars = nonNegativeNumber(value.descriptionChars) ?? fallback.descriptionChars;
+  return {
+    mode,
+    candidateCount: count,
+    descriptionChars: chars,
+    truncated: typeof value.truncated === 'boolean' ? value.truncated : fallback.truncated,
+    catalogFingerprint: text(value.catalogFingerprint) ?? fallback.catalogFingerprint,
+    catalogTotal: nonNegativeNumber(value.catalogTotal) ?? fallback.catalogTotal,
+    shortlist: nonNegativeNumber(value.shortlist) ?? fallback.shortlist,
+  };
+}
+
+function nonNegativeNumber(value: unknown): number | undefined {
+  const number = Number(value);
+  return Number.isFinite(number) && number >= 0 ? Math.floor(number) : undefined;
 }
 
 function parseJson(rawText: string): unknown {

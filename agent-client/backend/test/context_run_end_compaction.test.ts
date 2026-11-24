@@ -14,6 +14,19 @@ for (const name of ['BIOFLOW_LLM_API_KEY_DGX', 'BIOFLOW_LLM_API_KEY_D1']) {
   process.env[name] ||= 'test-key';
 }
 
+function summaryFixture(userGoal = 'x') {
+  return {
+    schemaVersion: 1,
+    taskState: { userGoal, currentStatus: 'in_progress', latestUserInstruction: '', openQuestions: [] },
+    decisions: [],
+    stableFacts: [],
+    completedActions: [],
+    pendingActions: [],
+    discardedContext: {},
+    continuationPrompt: 'continue',
+  };
+}
+
 function contextFor(overrides: Record<string, unknown> = {}): AgentRuntimeContext {
   return {
     agent: { id: 'pi', name: 'PI', role: 'pi' },
@@ -86,7 +99,7 @@ test('the run-end summary covers groups a request would have kept verbatim', asy
       prompts.push(String(body.messages[body.messages.length - 1]?.content || ''));
       response.writeHead(200, { 'content-type': 'application/json' });
       response.end(JSON.stringify({
-        choices: [{ message: { role: 'assistant', content: JSON.stringify({ schemaVersion: 1, taskState: { userGoal: 'x' } }) }, finish_reason: 'stop' }],
+        choices: [{ message: { role: 'assistant', content: JSON.stringify(summaryFixture()) }, finish_reason: 'stop' }],
       }));
     });
   });
@@ -134,7 +147,7 @@ test('the run-end summary reads the zone the next assembly drops, not the tail i
       bodies.push(JSON.parse(raw || '{}'));
       response.writeHead(200, { 'content-type': 'application/json' });
       response.end(JSON.stringify({
-        choices: [{ message: { role: 'assistant', content: JSON.stringify({ schemaVersion: 1, taskState: { userGoal: 'x' } }) }, finish_reason: 'stop' }],
+        choices: [{ message: { role: 'assistant', content: JSON.stringify(summaryFixture()) }, finish_reason: 'stop' }],
       }));
     });
   });
@@ -176,6 +189,246 @@ test('the run-end summary reads the zone the next assembly drops, not the tail i
     const prompt = String(bodies[0].messages[bodies[0].messages.length - 1].content);
     assert.match(prompt, /ZONEMARK/, 'the dropped zone must reach the summariser');
     assert.doesNotMatch(prompt, /TAILMARK/, 'the verbatim tail must not be summarised again');
+  } finally {
+    deleteConversation(conversation.id);
+    project.cleanup();
+  }
+});
+
+test('a failed run-end summary preserves the prior summary and marks the new tail uncovered', async (t) => {
+  const bodies: any[] = [];
+  const server = createServer((request, response) => {
+    let raw = '';
+    request.on('data', (chunk) => { raw += chunk; });
+    request.on('end', () => {
+      const body = JSON.parse(raw || '{}');
+      bodies.push(body);
+      response.writeHead(200, { 'content-type': 'application/json' });
+      response.end(JSON.stringify({ choices: [{ message: { role: 'assistant', content: '' }, finish_reason: 'stop' }] }));
+    });
+  });
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+  t.after(() => server.close());
+  const address = server.address();
+  assert.ok(address && typeof address !== 'string');
+
+  const project = createTempProject('run-end-failed-summary');
+  const conversation = createConversation({ title: 'failed-summary', projectPath: project.projectPath });
+  try {
+    const manager = new RuntimeContextManager();
+    manager.saveCheckpoint({
+      conversationId: conversation.id,
+      context: contextFor(),
+      messages: [{ id: 'm0', conversationId: conversation.id, role: 'user', content: 'PRIOR-GOAL', toolCalls: null, createdAt: '2026-10-31T00:00:00.000Z' }] as never,
+      budget: { tokenEstimate: 1_000, ratio: 0.1 },
+      triggerReason: 'prior',
+      modelSummary: {
+        schemaVersion: 1,
+        taskState: { userGoal: 'PRIOR-GOAL', currentStatus: 'in_progress' },
+        stableFacts: ['PRIOR-FACT'],
+        contextCoverage: { summarisedMessages: 1, totalMessages: 1, uncoveredTail: false },
+      },
+    });
+    const messages = [
+      { role: 'assistant', content: `OLDFACT ${'o'.repeat(4_000)}` },
+      ...Array.from({ length: 3 }, (_, index) => ({ role: 'assistant', content: `BARRIER ${index} ${'b'.repeat(2_000)}` })),
+      { role: 'assistant', content: `NEWTAIL ${'n'.repeat(30_000)}` },
+    ] as never;
+
+    const result = await manager.compactAfterRun({
+      conversationId: conversation.id,
+      context: contextFor({
+        llm: { baseUrl: `http://127.0.0.1:${address.port}/v1`, apiKey: 'unused', model: 'failed-summary', contextWindowTokens: 20_000 },
+      }),
+      messages,
+      budget: { tokenEstimate: 12_000, ratio: 0.6, contextWindowTokens: 20_000 },
+      triggerReason: 'soft_watermark_after_task',
+    });
+
+    assert.ok(result.degraded);
+    assert.match(result.degraded.reason, /empty text/);
+    assert.equal(bodies.length, 2, 'an empty reply is retried once with the repair prompt');
+    assert.equal(bodies[0].reasoning_effort, 'none', 'summariser must explicitly disable provider-default reasoning');
+    const stored = contextStore.getLatestContextCheckpoint(conversation.id);
+    assert.ok(stored);
+    assert.deepEqual((stored.modelSummary as any).stableFacts, ['PRIOR-FACT']);
+    assert.equal((stored.modelSummary as any).taskState.userGoal, 'PRIOR-GOAL');
+    assert.equal((stored.modelSummary as any).contextCoverage.uncoveredTail, true);
+    assert.equal((stored.modelSummary as any).contextCoverage.summarisedMessages, 1);
+    assert.equal((stored.modelSummary as any).contextCoverage.totalMessages, 5);
+  } finally {
+    deleteConversation(conversation.id);
+    project.cleanup();
+  }
+});
+
+test('a later successful retry covers the tail without losing prior facts', async (t) => {
+  const server = createServer((request, response) => {
+    let raw = '';
+    request.on('data', (chunk) => { raw += chunk; });
+    request.on('end', () => {
+      response.writeHead(200, { 'content-type': 'application/json' });
+      response.end(JSON.stringify({
+        choices: [{
+          message: {
+            role: 'assistant',
+            content: JSON.stringify({
+              ...summaryFixture('PRIOR-GOAL'),
+              taskState: { userGoal: 'PRIOR-GOAL', currentStatus: 'completed', latestUserInstruction: '', openQuestions: [] },
+              stableFacts: ['PRIOR-FACT', 'RETRY-FACT'],
+            }),
+          },
+          finish_reason: 'stop',
+        }],
+      }));
+    });
+  });
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+  t.after(() => server.close());
+  const address = server.address();
+  assert.ok(address && typeof address !== 'string');
+
+  const project = createTempProject('run-end-retry-summary');
+  const conversation = createConversation({ title: 'retry-summary', projectPath: project.projectPath });
+  try {
+    const manager = new RuntimeContextManager();
+    manager.saveCheckpoint({
+      conversationId: conversation.id,
+      context: contextFor(),
+      messages: [{ id: 'm0', conversationId: conversation.id, role: 'user', content: 'PRIOR-GOAL', toolCalls: null, createdAt: '2026-10-31T00:00:00.000Z' }] as never,
+      budget: { tokenEstimate: 1_000, ratio: 0.1 },
+      triggerReason: 'prior',
+      modelSummary: { schemaVersion: 1, taskState: { userGoal: 'PRIOR-GOAL' }, stableFacts: ['PRIOR-FACT'] },
+    });
+    const messages = [
+      { role: 'assistant', content: `OLDFACT ${'o'.repeat(4_000)}` },
+      ...Array.from({ length: 3 }, (_, index) => ({ role: 'assistant', content: `BARRIER ${index} ${'b'.repeat(2_000)}` })),
+      { role: 'assistant', content: `NEWTAIL ${'n'.repeat(30_000)}` },
+    ] as never;
+
+    const result = await manager.compactAfterRun({
+      conversationId: conversation.id,
+      context: contextFor({
+        llm: { baseUrl: `http://127.0.0.1:${address.port}/v1`, apiKey: 'unused', model: 'retry-summary', contextWindowTokens: 20_000 },
+      }),
+      messages,
+      budget: { tokenEstimate: 12_000, ratio: 0.6, contextWindowTokens: 20_000 },
+      triggerReason: 'soft_watermark_after_task',
+    });
+
+    assert.equal(result.degraded, undefined);
+    const stored = contextStore.getLatestContextCheckpoint(conversation.id);
+    assert.ok(stored);
+    assert.deepEqual((stored.modelSummary as any).stableFacts, ['PRIOR-FACT', 'RETRY-FACT']);
+    // The summary covers the cold segment; the verbatim tail is explicitly not claimed.
+    assert.equal((stored.modelSummary as any).contextCoverage.uncoveredTail, true);
+    assert.ok((stored.modelSummary as any).contextCoverage.summarisedMessages <= 5);
+    assert.ok((stored.modelSummary as any).contextCoverage.tailMessages >= 1);
+  } finally {
+    deleteConversation(conversation.id);
+    project.cleanup();
+  }
+});
+
+test('a schema-invalid summary is retried with a bounded repair prompt', async (t) => {
+  const bodies: any[] = [];
+  const server = createServer((request, response) => {
+    let raw = '';
+    request.on('data', (chunk) => { raw += chunk; });
+    request.on('end', () => {
+      const body = JSON.parse(raw || '{}');
+      bodies.push(body);
+      const content = bodies.length === 1
+        ? JSON.stringify({ user_goal: 'wrong schema', completed_work: 'nothing' })
+        : JSON.stringify({
+            schemaVersion: 1,
+            taskState: { userGoal: 'right schema', currentStatus: 'in_progress' },
+            decisions: [], stableFacts: [], completedActions: [], pendingActions: [],
+            discardedContext: {}, continuationPrompt: 'continue',
+          });
+      response.writeHead(200, { 'content-type': 'application/json' });
+      response.end(JSON.stringify({ choices: [{ message: { role: 'assistant', content }, finish_reason: 'stop' }] }));
+    });
+  });
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+  t.after(() => server.close());
+  const address = server.address();
+  assert.ok(address && typeof address !== 'string');
+
+  const project = createTempProject('run-end-schema-retry');
+  const conversation = createConversation({ title: 'schema-retry', projectPath: project.projectPath });
+  try {
+    const messages = [
+      { role: 'assistant', content: `OLDFACT ${'o'.repeat(4_000)}` },
+      ...Array.from({ length: 3 }, (_, index) => ({ role: 'assistant', content: `BARRIER ${index} ${'b'.repeat(2_000)}` })),
+      { role: 'assistant', content: `NEWTAIL ${'n'.repeat(30_000)}` },
+    ] as never;
+    const result = await new RuntimeContextManager().compactAfterRun({
+      conversationId: conversation.id,
+      context: contextFor({
+        llm: { baseUrl: `http://127.0.0.1:${address.port}/v1`, apiKey: 'unused', model: 'schema-retry', contextWindowTokens: 20_000 },
+      }),
+      messages,
+      budget: { tokenEstimate: 12_000, ratio: 0.6, contextWindowTokens: 20_000 },
+      triggerReason: 'soft_watermark_after_task',
+    });
+    assert.equal(result.degraded, undefined);
+    assert.equal(bodies.length, 2);
+    assert.match(String(bodies[1].messages.at(-1)?.content), /previous reply was rejected/i);
+    const stored = contextStore.getLatestContextCheckpoint(conversation.id);
+    assert.equal((stored?.modelSummary as any).taskState.userGoal, 'right schema');
+  } finally {
+    deleteConversation(conversation.id);
+    project.cleanup();
+  }
+});
+
+test('an endpoint that rejects reasoning_effort still completes the run-end summary', async (t) => {
+  const bodies: any[] = [];
+  const server = createServer((request, response) => {
+    let raw = '';
+    request.on('data', (chunk) => { raw += chunk; });
+    request.on('end', () => {
+      const body = JSON.parse(raw || '{}');
+      bodies.push(body);
+      if (body.reasoning_effort) {
+        response.writeHead(400, { 'content-type': 'application/json' });
+        response.end(JSON.stringify({ error: { message: 'Unknown parameter: reasoning_effort' } }));
+        return;
+      }
+      response.writeHead(200, { 'content-type': 'application/json' });
+      response.end(JSON.stringify({
+        choices: [{ message: { role: 'assistant', content: JSON.stringify(summaryFixture('compat')) }, finish_reason: 'stop' }],
+      }));
+    });
+  });
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+  t.after(() => server.close());
+  const address = server.address();
+  assert.ok(address && typeof address !== 'string');
+
+  const project = createTempProject('run-end-compat');
+  const conversation = createConversation({ title: 'compat', projectPath: project.projectPath });
+  try {
+    const messages = [
+      { role: 'assistant', content: `OLDFACT ${'o'.repeat(4_000)}` },
+      ...Array.from({ length: 3 }, (_, index) => ({ role: 'assistant', content: `BARRIER ${index} ${'b'.repeat(2_000)}` })),
+      { role: 'assistant', content: `NEWTAIL ${'n'.repeat(30_000)}` },
+    ] as never;
+    const result = await new RuntimeContextManager().compactAfterRun({
+      conversationId: conversation.id,
+      context: contextFor({
+        llm: { baseUrl: `http://127.0.0.1:${address.port}/v1`, apiKey: 'unused', model: 'compat', contextWindowTokens: 20_000 },
+      }),
+      messages,
+      budget: { tokenEstimate: 12_000, ratio: 0.6, contextWindowTokens: 20_000 },
+      triggerReason: 'soft_watermark_after_task',
+    });
+    assert.equal(result.degraded, undefined);
+    assert.ok(bodies.length >= 2);
+    assert.equal(bodies[0].reasoning_effort, 'none');
+    assert.equal('reasoning_effort' in bodies[1], false);
+    assert.equal((result.checkpoint.modelSummary as any).taskState.userGoal, 'compat');
   } finally {
     deleteConversation(conversation.id);
     project.cleanup();

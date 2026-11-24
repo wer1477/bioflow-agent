@@ -1,9 +1,8 @@
 import { TEAM_ROLE_IDS, getTeamConfig, getAgent, type AgentRole } from '../config/agent_config_store.js';
-import { appendContextMessage } from '../config/context_message_store.js';
 import { judgeRelay, type RelayGateVerdict } from '../team/relay_gate.js';
 import { buildTeamMessage, type TeamMessage, type TeamMessageKind } from '../team/message.js';
 import { enqueueTeamMessage } from '../team/message_bus.js';
-import { appendTeamMessage, ensureRoleSession, resolveTeamRoot } from '../team/team_service.js';
+import { appendTeamMessage, readTeamState, resolveTeamRoot } from '../team/team_service.js';
 import type { Conversation } from '../config/conversation_types.js';
 import type { CoreToolExecutionContext } from '../core_tools_runtime.js';
 
@@ -80,6 +79,23 @@ export async function executeTeamMessage(args: Record<string, unknown>, context:
   if (!root || root.roleId) {
     return failure('not_a_team', '当前会话不属于任何团队，无法发送。');
   }
+  const after = args.after;
+  let dependsOn: string[] | undefined;
+  if (after !== undefined) {
+    if (action !== 'delegate' || !Array.isArray(after) || after.length > 16 ||
+        after.some((id) => typeof id !== 'string' || !id.trim())) {
+      return failure('invalid_dependencies', 'after 只接受委派任务 ID 的数组。');
+    }
+    const state = readTeamState(root.id);
+    dependsOn = [...new Set<string>(after)];
+    const known = new Set([
+      ...Object.keys(state.handoffOutcomes),
+      ...state.pendingDeliveries.filter((item) => item.message.kind === 'delegate').map((item) => item.message.id),
+    ]);
+    if (dependsOn.some((id) => !known.has(id))) {
+      return failure('unknown_dependency', 'after 必须引用本项目会话中已登记的委派。');
+    }
+  }
   const target = getAgent(to);
   if (!target) {
     return failure('unknown_role', `角色 ${to} 尚未配置。`);
@@ -90,7 +106,11 @@ export async function executeTeamMessage(args: Record<string, unknown>, context:
   let gate: RelayGateVerdict | null = null;
   if (!isLead && action === 'relay') {
     gate = await judgeRelay({ from: caller, to, body, why });
-    recordRelayForLead(root.id, caller, to, body, gate);
+    if (gate.verdict !== 'allow') {
+      appendTeamMessage(root.id, buildTeamMessage({
+        kind: 'relay', from: caller as AgentRole, to: to as AgentRole, body, gate,
+      }));
+    }
 
     if (gate.verdict === 'reject') {
       return failure(
@@ -111,7 +131,6 @@ export async function executeTeamMessage(args: Record<string, unknown>, context:
           why ? `理由：${why}` : '',
         ].filter(Boolean).join('\n'),
       });
-      appendTeamMessage(root.id, escalation);
       enqueueTeamMessage(root.id, escalation);
       return JSON.stringify({
         ok: true,
@@ -128,18 +147,16 @@ export async function executeTeamMessage(args: Record<string, unknown>, context:
     to: to as AgentRole,
     body,
     expect,
+    dependsOn,
     ...(gate ? { gate: { ...gate } } : {}),
   });
-  // Durable first: the record of what was asked survives even if this turn dies before the
-  // pump gets to run the target.
-  appendTeamMessage(root.id, message);
   enqueueTeamMessage(root.id, message);
 
   const note = isLead
-    ? `消息已发给 ${target.label}。本轮结束后会在该角色的会话里执行，结果回到 ${lead} 这里；不要在本轮重复做同样的工作。`
+    ? `消息已发给 ${target.label}。接收角色会在本轮结束后开始。若下一步依赖结果，请结束本轮，随后系统将结果交回 ${lead}。`
     : action === 'deliver'
       ? `已交付给 ${lead}。本轮结束后 ${lead} 会读到你这条消息。`
-      : `已送达 ${target.label}。对方的回答会作为一条回复回到你的会话。`;
+      : `已排队发给 ${target.label}。若下一步依赖回答，请结束本轮，让系统调度接收角色并把回复送回你的会话。`;
 
   return JSON.stringify({
     ok: true,
@@ -156,25 +173,6 @@ export async function executeTeamMessage(args: Record<string, unknown>, context:
  * transcript as a notice. The message says what was asked and how the gate ruled, so the lead
  * can object later instead of being blind to a hop it never saw.
  */
-function recordRelayForLead(rootId: string, from: string, to: string, body: string, gate: RelayGateVerdict): void {
-  try {
-    const leadSession = ensureRoleSession(rootId, getTeamConfig().leadRoleId);
-    const verdict = gate.verdict === 'allow' ? '放行' : gate.verdict === 'reject' ? '驳回' : '升级';
-    appendContextMessage(leadSession.id, {
-      role: 'user',
-      runId: null,
-      content: [
-        `[团队通信 · ${from} → ${to} · 转述请求]`,
-        `判定：${verdict}（${gate.source}，置信度 ${gate.confidence.toFixed(2)}）`,
-        ...(gate.reasons.length ? [`理由：${gate.reasons.join('；')}`] : []),
-        `内容：${body}`,
-      ].join('\n'),
-    });
-  } catch {
-    // Visibility must never break the send itself.
-  }
-}
-
 function failure(code: string, message: string): string {
   return JSON.stringify({ ok: false, error: { code, message } });
 }

@@ -2,6 +2,8 @@
 
 ## Skills
 
+- geo-contract（skill：geo-contract）：Audit GEO supplementary expression matrices against SOFT metadata: column-to-GSM join evidence and observed/declared scale separation. Use before any GEO-derived analysis; never assumes column order or that integer appearance proves raw counts.
+- bulk-contrast（skill：bulk-contrast）：Fixed two-group contrast after geo-contract: CPM-log when raw-count eligibility is proven, otherwise a declared descriptive log contrast, Welch t and BH. Refuses incomplete joins or unknown scales.
 - bio-align（skill：bio-align）：Plan or run a minimal read-alignment pipeline: fastp -> STAR/HISAT2/BWA/Salmon -> featureCounts, with a dependency check and a manifest. The default environment still needs provisioning.
 - bio-metagenomics（skill：bio-metagenomics）：Plan or run a minimal shotgun-metagenomics pipeline: fastp -> host removal -> MEGAHIT/SPAdes -> Kraken2/Kaiju -> Taxpasta, with a dependency check and a manifest.
 

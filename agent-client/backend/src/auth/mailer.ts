@@ -47,8 +47,8 @@ export function createSmtpMailer(smtp: SmtpConfig): Mailer {
     port: smtp.port,
     secure: smtp.secure,
     auth: { user: smtp.user, pass: smtp.pass },
-    // 服务器 hostname 不是 FQDN（deployment-host），显式给 HELO 名避免被拒。
-    name: 'example.com',
+    // 服务器 hostname 不是 FQDN（the host），显式给 HELO 名避免被拒。
+    name: 'bioflow.example.com',
   });
 
   return {

@@ -118,7 +118,7 @@ from pylabrobot.liquid_handling.backends import OpentronsBackend
 from pylabrobot.resources import OTDeck
 
 # Create Opentrons backend (requires robot IP address)
-backend = OpentronsBackend(host="192.0.2.10")  # Replace with your robot's IP
+backend = OpentronsBackend(host="192.168.1.100")  # Replace with your robot's IP
 
 # Initialize liquid handler
 lh = LiquidHandler(backend=backend, deck=OTDeck())
@@ -152,7 +152,7 @@ from pylabrobot.resources import OTDeck
 
 # Initialize with robot IP
 lh = LiquidHandler(
-    backend=OpentronsBackend(host="192.0.2.10"),
+    backend=OpentronsBackend(host="192.168.1.100"),
     deck=OTDeck()
 )
 await lh.setup()
@@ -295,7 +295,7 @@ def get_backend(robot_type: str):
         return STAR()
     elif robot_type == "opentrons":
         from pylabrobot.liquid_handling.backends import OpentronsBackend
-        return OpentronsBackend(host="192.0.2.10")
+        return OpentronsBackend(host="192.168.1.100")
     elif robot_type == "simulation":
         from pylabrobot.liquid_handling.backends.simulation import ChatterboxBackend
         return ChatterboxBackend()
@@ -356,7 +356,7 @@ Some backends accept configuration parameters:
 ```python
 # Opentrons with custom parameters
 backend = OpentronsBackend(
-    host="192.0.2.10",
+    host="192.168.1.100",
     port=31950  # Default Opentrons API port
 )
 
@@ -441,7 +441,7 @@ async def run_protocol(
         deck = STARLetDeck()
     elif robot_type == "opentrons":
         from pylabrobot.liquid_handling.backends import OpentronsBackend
-        backend = OpentronsBackend(host="192.0.2.10")
+        backend = OpentronsBackend(host="192.168.1.100")
         deck = OTDeck()
     elif robot_type == "simulation":
         from pylabrobot.liquid_handling.backends.simulation import ChatterboxBackend

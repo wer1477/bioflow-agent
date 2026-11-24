@@ -1,4 +1,4 @@
-import { AgentRunCancelledError, agentRuntime } from '../agent_runtime.js';
+import { AgentRunCancelledError, ContextBudgetExceededError, PendingTasksError, agentRuntime } from '../agent_runtime.js';
 import { RepeatedToolFailureError } from '../tool_failure_guard.js';
 import type { AgentChatMessage, AgentChatRequest, AgentContextMessage, AgentEvent, RuntimeContextUpdate } from '../types.js';
 import {
@@ -26,6 +26,7 @@ import {
 import { compactRecord } from '../config/conversation_file_store.js';
 import { beginRunActivity, endRunActivity, settleRunActivity } from '../run_activity.js';
 import { finalizeRunManifest } from '../provenance/run_manifest.js';
+import { maybeDiscoveryPreflight } from '../discovery_preflight_runtime.js';
 import type { TranscriptRecorder, TranscriptRunIdentity } from '../transcript_store.js';
 import { runRegistry } from '../run_registry.js';
 import { getConversation } from '../config/conversation_service.js';
@@ -165,6 +166,30 @@ export class AgentService {
       context,
       userMessage: request.message,
     });
+    const discovery = await maybeDiscoveryPreflight({
+      context,
+      userMessage: request.message,
+      messages: managedHistory.messages,
+    });
+    if (discovery) {
+      context.systemPrompt = `${context.systemPrompt}
+
+[bounded capability discovery] ${discovery.text}`;
+      const discoveryEvent = {
+        type: 'info' as const,
+        content: `discovery_preflight: ${JSON.stringify({
+          status: discovery.card.status,
+          selectedId: discovery.card.selectedId,
+          entrypoint: discovery.card.entrypoint,
+          latencyMs: discovery.card.latencyMs,
+          contextChars: discovery.card.contextChars,
+          textChars: discovery.text.length,
+          materializedChars: discovery.materialized_chars,
+        })}`,
+      };
+      runState.recordEvent(discoveryEvent);
+      sink.emit(discoveryEvent);
+    }
     // Live view of the runtime's own message array: the service assembles the first
     // request but does not see how full the run gets afterwards, and it cannot decide
     // about the run-end checkpoint from the assembly snapshot alone.
@@ -301,6 +326,43 @@ export class AgentService {
         }
         return;
       }
+      if (err instanceof ContextBudgetExceededError || err instanceof PendingTasksError) {
+        const stopReason = err instanceof ContextBudgetExceededError ? 'budget_exceeded' : 'unfinished_tasks';
+        runState.recordEvent({ type: 'error', error: err.message });
+        runState.persist('error', err.message, stopReason);
+        if (sink.isOpen()) {
+          sink.emit({ type: 'run_status', runId: runState.runId, status: 'failed', stopReason });
+          sink.emit({ type: 'error', error: err.message });
+        }
+        if (err instanceof ContextBudgetExceededError && request.conversationId) {
+          try {
+            const previousSummary = managedHistory.checkpoint?.modelSummary;
+            runtimeContextManager.saveCheckpoint({
+              conversationId: request.conversationId,
+              runId: runState.runId,
+              context,
+              messages: agentContextResolver.getMessages(request.conversationId),
+              budget: runtimeContext.budget,
+              triggerReason: 'context_budget_blocked',
+              modelSummary: runtimeContext.summary ?? (previousSummary && typeof previousSummary === 'object' && !Array.isArray(previousSummary) ? previousSummary as Record<string, unknown> : {
+                schemaVersion: 1,
+                taskState: { currentStatus: 'blocked' },
+                continuationPrompt: 'Continue the unfinished task using the persisted conversation and workspace.',
+              }),
+            });
+          } catch (checkpointError) {
+            const event = {
+              type: 'loop_health' as const,
+              level: 'warning' as const,
+              reason: 'context_checkpoint_save_failed',
+              detail: checkpointError instanceof Error ? checkpointError.message : String(checkpointError),
+            };
+            runState.recordEvent(event);
+            if (sink.isOpen()) sink.emit(event);
+          }
+        }
+        return;
+      }
       const errorMessage = `Connection error: ${err instanceof Error ? err.message : String(err)}`;
       runState.persist('error', errorMessage);
       if (sink.isOpen()) {
@@ -384,6 +446,9 @@ function toAgentChatRequest(
       description: skill.description,
       instructions: skill.instructions,
       resources: skill.resources,
+      // Runtime-only source directory: lets provenance.json resolve without a second
+      // lookup or a duplicated path table. It is not persisted in the skills index.
+      ...(skill.directory ? { directory: skill.directory } : {}),
     })),
     securityMode: context.agent.securityMode,
     ...(typeof request.delegationDepth === 'number' ? { delegationDepth: request.delegationDepth } : {}),

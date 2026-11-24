@@ -1,5 +1,4 @@
 import type { ChatCompletionTool } from 'openai/resources/chat/completions';
-import { randomUUID } from 'node:crypto';
 import type { AgentChatRequest, AgentEvent, CatalogServerEntry } from './types.js';
 import { executeCoreTool, getCoreToolForCall, isCoreToolCall, isToolLibraryCoreTool, isWebSearchCoreTool } from './core_tools_runtime.js';
 import { buildSearchArguments, discoverSearchProviders, mergeSearchResults, parseSearchOutput, type ProviderSearchOutcome } from './core_tools/web_search.js';
@@ -20,11 +19,12 @@ import { mcpManager } from './mcp_manager.js';
 import { extractToolResultEvents } from './tool_result_events.js';
 import { resolveConversationProjectPath } from './project_boundary.js';
 import { biodService, buildBiodState, loadBiodConfig, type BiodService } from './biod/index.js';
-import { toPlanToolCandidate } from './biod/researcher/candidates.js';
-import { executePlanAuditTool } from './biod/researcher/tool.js';
-import { executeIssueAuditTool } from './biod/reviewer/tool.js';
-import { executeManuscriptAuditTool } from './biod/writer/tool.js';
-import { executeHypothesisScreenTool } from './biod/searcher/tool.js';
+import {
+  catalogMeta,
+  NATIVE_SHORTLIST_LIMIT,
+  shortlistCandidates,
+  type ShortlistResult,
+} from './biod/candidate_shortlist.js';
 import {
   capabilitySelectionMode,
   isCapabilityCoreToolId,
@@ -59,7 +59,7 @@ export class RuntimeToolDispatcher {
     /** Optional project root override for tests/integration; otherwise resolved from the conversation. */
     projectPath?: string;
     /** Decision service; injectable so tests never need a live sidecar. */
-    biod?: Pick<BiodService, 'decideTool' | 'decideKnowledge'> & Partial<Pick<BiodService, 'runPlanAudit' | 'runManuscriptAudit' | 'runIssueAudit' | 'runHypothesisScreen'>>;
+    biod?: Pick<BiodService, 'decideTool' | 'decideKnowledge'>;
   }) {}
 
   async execute(toolName: string, args: Record<string, unknown>): Promise<ToolDispatchResult> {
@@ -134,13 +134,9 @@ export class RuntimeToolDispatcher {
       }
 
       const action = String(args.action ?? 'select').trim() || 'select';
-      if (action === 'hypothesis-screen') return await this.hypothesisScreen(args);
-      if (action === 'plan-audit') return await this.planAudit(args, context);
-      if (action === 'manuscript-audit') return await this.manuscriptAudit(args);
-      if (action === 'issue-audit') return await this.issueAudit(args);
       if (action === 'select') return await this.selectTool(args, context);
       if (action !== 'catalog' && action !== 'index') {
-        return errorResult(`Unknown toollibrary action '${action}'. Use select, catalog, index, hypothesis-screen, plan-audit, manuscript-audit, or issue-audit.`);
+        return errorResult(`Unknown toollibrary action '${action}'. Use select, catalog, or index.`);
       }
       return { result: JSON.stringify(executeToolLibraryBrowse(args, context)), events: [] };
     } catch (error) {
@@ -172,122 +168,6 @@ export class RuntimeToolDispatcher {
     return { result: JSON.stringify(outcome.result), events: [] };
   }
 
-  /**
-   * `toollibrary action=hypothesis-screen`: Searcher-only, read-only with respect to the
-   * hypotheses file. The report is written under `research/` in assist mode; shadow mode
-   * only logs.
-   */
-  private async hypothesisScreen(args: Record<string, unknown>): Promise<ToolDispatchResult> {
-    const agentId = this.options.request.mainAgent?.id;
-    if (agentId !== 'searcher') {
-      return errorResult('hypothesis-screen is only available to the searcher role.');
-    }
-    const projectPath = this.projectPath();
-    if (!projectPath) {
-      return errorResult('hypothesis-screen requires a conversation bound to a project directory.');
-    }
-    const service = this.options.biod ?? biodService;
-    const runHypothesisScreen = service.runHypothesisScreen?.bind(service);
-    if (!runHypothesisScreen) return errorResult('hypothesis-screen is not available in this runtime.');
-    const result = await executeHypothesisScreenTool(args, {
-      projectPath,
-      agentId,
-      service: { runHypothesisScreen },
-      requestId: randomUUID(),
-      runId: this.options.runInstanceId,
-      sessionId: this.options.request.conversationId ?? '',
-      rolePromptVersion: String(this.options.request.mainAgent?.promptFile ?? 'searcher'),
-    });
-    return { result, events: [] };
-  }
-
-  /**
-   * `toollibrary action=plan-audit`: Researcher-only, read-only with respect to the design
-   * document. The report is written under `planning/` in assist mode; shadow mode only logs.
-   */
-  private async planAudit(args: Record<string, unknown>, context: ToolLibraryContext): Promise<ToolDispatchResult> {
-    const agentId = this.options.request.mainAgent?.id;
-    if (agentId !== 'researcher') {
-      return errorResult('plan-audit is only available to the researcher role.');
-    }
-    const projectPath = this.projectPath();
-    if (!projectPath) {
-      return errorResult('plan-audit requires a conversation bound to a project directory.');
-    }
-    const service = this.options.biod ?? biodService;
-    const runPlanAudit = service.runPlanAudit?.bind(service);
-    if (!runPlanAudit) return errorResult('plan-audit is not available in this runtime.');
-    const tools = collectToolLibraryCandidates(context).map((entry) => toPlanToolCandidate(entry));
-    const result = await executePlanAuditTool(args, {
-      projectPath,
-      agentId,
-      tools,
-      service: { runPlanAudit },
-      requestId: randomUUID(),
-      runId: this.options.runInstanceId,
-      sessionId: this.options.request.conversationId ?? '',
-      rolePromptVersion: String(this.options.request.mainAgent?.promptFile ?? 'researcher'),
-    });
-    return { result, events: [] };
-  }
-
-  /**
-   * `toollibrary action=manuscript-audit`: Writer-only, read-only with respect to the
-   * manuscript and matrix. The report is written under `manuscript/` in assist mode.
-   */
-  private async manuscriptAudit(args: Record<string, unknown>): Promise<ToolDispatchResult> {
-    const agentId = this.options.request.mainAgent?.id;
-    if (agentId !== 'writer') {
-      return errorResult('manuscript-audit is only available to the writer role.');
-    }
-    const projectPath = this.projectPath();
-    if (!projectPath) {
-      return errorResult('manuscript-audit requires a conversation bound to a project directory.');
-    }
-    const service = this.options.biod ?? biodService;
-    const runManuscriptAudit = service.runManuscriptAudit?.bind(service);
-    if (!runManuscriptAudit) return errorResult('manuscript-audit is not available in this runtime.');
-    const result = await executeManuscriptAuditTool(args, {
-      projectPath,
-      agentId,
-      service: { runManuscriptAudit },
-      requestId: randomUUID(),
-      runId: this.options.runInstanceId,
-      sessionId: this.options.request.conversationId ?? '',
-      rolePromptVersion: String(this.options.request.mainAgent?.promptFile ?? 'writer'),
-    });
-    return { result, events: [] };
-  }
-
-  /**
-   * `toollibrary action=issue-audit`: Reviewer-only, read-only with respect to the review
-   * and the issue matrix. The report is written under `review/` in assist mode; the tool
-   * never creates issues, assigns severity, or dispatches work.
-   */
-  private async issueAudit(args: Record<string, unknown>): Promise<ToolDispatchResult> {
-    const agentId = this.options.request.mainAgent?.id;
-    if (agentId !== 'reviewer') {
-      return errorResult('issue-audit is only available to the reviewer role.');
-    }
-    const projectPath = this.projectPath();
-    if (!projectPath) {
-      return errorResult('issue-audit requires a conversation bound to a project directory.');
-    }
-    const service = this.options.biod ?? biodService;
-    const runIssueAudit = service.runIssueAudit?.bind(service);
-    if (!runIssueAudit) return errorResult('issue-audit is not available in this runtime.');
-    const result = await executeIssueAuditTool(args, {
-      projectPath,
-      agentId,
-      service: { runIssueAudit },
-      requestId: randomUUID(),
-      runId: this.options.runInstanceId,
-      sessionId: this.options.request.conversationId ?? '',
-      rolePromptVersion: String(this.options.request.mainAgent?.promptFile ?? 'reviewer'),
-    });
-    return { result, events: [] };
-  }
-
   private projectPath(): string | null {
     return this.options.projectPath ?? resolveConversationProjectPath(this.options.request.conversationId) ?? null;
   }
@@ -306,8 +186,8 @@ export class RuntimeToolDispatcher {
       return this.deferredToolBrowse(args, context, { status: 'off', reason: 'not_configured' });
     }
     const domain = String(args.domain ?? '').trim();
-    const candidates = collectToolLibraryCandidates(context, domain);
-    if (!candidates.length) {
+    const catalogCandidates = collectToolLibraryCandidates(context, domain);
+    if (!catalogCandidates.length) {
       return this.deferredToolBrowse(args, context, { status: 'deferred', reason: 'no_candidates' });
     }
 
@@ -321,18 +201,28 @@ export class RuntimeToolDispatcher {
       return this.deferredToolBrowse(args, context, { status: 'deferred', reason: 'no_state' });
     }
 
-    const decision = await (this.options.biod ?? biodService).decideTool({ state, candidates, role: this.options.request.mainAgent?.id });
+    const shortlist = shortlistCandidates(state, catalogCandidates, NATIVE_SHORTLIST_LIMIT);
+    if (shortlist.fallback === 'no_lexical_signal' && catalogCandidates.length > shortlist.limit) {
+      return this.deferredToolBrowse(
+        args,
+        context,
+        { status: 'deferred', reason: 'no_lexical_signal' },
+        shortlistMeta(shortlist),
+      );
+    }
+    const candidates = shortlist.candidates;
+    const catalog = catalogMeta('toollibrary', catalogCandidates.length, catalogCandidates, candidates.length);
+    const decision = await (this.options.biod ?? biodService).decideTool({
+      state,
+      candidates,
+      role: this.options.request.mainAgent?.id,
+      catalog,
+    });
     if (!decision.ok) {
       return this.deferredToolBrowse(args, context, { status: 'deferred', reason: decision.reason });
     }
 
-    const decisionMeta = {
-      decisionId: decision.decisionId,
-      confidence: decision.confidence,
-      latencyMs: decision.latencyMs,
-      modelVersion: decision.modelVersion,
-      candidateCount: decision.candidateCount,
-    };
+    const decisionMeta = decisionMetaFor(decision, shortlist);
     const chosenId = decision.chosen[0];
     if (!chosenId || chosenId === 'NO_TOOL') {
       return this.deferredToolBrowse(args, context, { status: 'deferred', reason: 'no_tool' }, decisionMeta);
@@ -348,6 +238,7 @@ export class RuntimeToolDispatcher {
 
     const loaded = await this.loadTool({ id: selected.id }, context);
     const loadResult = safeParseRecord(loaded.result);
+    if (loadResult && selected.version) loadResult.version = selected.version;
     if (loadResult && loadResult.ok === false) {
       return this.deferredToolBrowse(args, context, { status: 'deferred', reason: 'load_failed' }, decisionMeta);
     }
@@ -361,6 +252,7 @@ export class RuntimeToolDispatcher {
           kind: selected.kind,
           description: selected.description,
           domain: selected.domain,
+          version: selected.version ?? null,
         },
         load: loadResult ?? loaded.result,
         decision: decisionMeta,
@@ -405,8 +297,9 @@ export class RuntimeToolDispatcher {
     }
 
     const domain = String(args.domain ?? '').trim();
-    const { candidates, warnings } = listKnowledgeBaseCandidates(options, domain || undefined);
-    if (!candidates.length) {
+    const listed = listKnowledgeBaseCandidates(options, domain || undefined);
+    const warnings = listed.warnings;
+    if (!listed.candidates.length) {
       return this.deferredKnowledgeBrowse(args, { status: 'deferred', reason: 'no_candidates' }, warnings);
     }
 
@@ -420,20 +313,34 @@ export class RuntimeToolDispatcher {
       return this.deferredKnowledgeBrowse(args, { status: 'deferred', reason: 'no_state' });
     }
 
-    const decision = await (this.options.biod ?? biodService).decideKnowledge({ state, candidates, role: this.options.request.mainAgent?.id });
+    const shortlist = shortlistCandidates(state, listed.candidates, NATIVE_SHORTLIST_LIMIT);
+    if (shortlist.fallback === 'no_lexical_signal' && listed.candidates.length > shortlist.limit) {
+      return this.deferredKnowledgeBrowse(
+        args,
+        { status: 'deferred', reason: 'no_lexical_signal' },
+        warnings,
+        shortlistMeta(shortlist),
+      );
+    }
+    const candidates = shortlist.candidates;
+    const catalog = catalogMeta('knowledgebase', listed.candidates.length, listed.candidates, candidates.length);
+    const decision = await (this.options.biod ?? biodService).decideKnowledge({
+      state,
+      candidates,
+      role: this.options.request.mainAgent?.id,
+      catalog,
+    });
     if (!decision.ok) {
       return this.deferredKnowledgeBrowse(args, { status: 'deferred', reason: decision.reason }, warnings);
     }
 
-    const decisionMeta = {
-      decisionId: decision.decisionId,
-      confidence: decision.confidence,
-      latencyMs: decision.latencyMs,
-      modelVersion: decision.modelVersion,
-      candidateCount: decision.candidateCount,
-    };
+    const decisionMeta = decisionMetaFor(decision, shortlist);
     if (!decision.chosen.length) {
       return this.deferredKnowledgeBrowse(args, { status: 'deferred', reason: 'no_selection' }, warnings, decisionMeta);
+    }
+    const shortlisted = new Set(candidates.map((candidate) => candidate.id));
+    if (decision.chosen.some((id) => !shortlisted.has(id))) {
+      return this.deferredKnowledgeBrowse(args, { status: 'deferred', reason: 'catalog_mismatch' }, warnings, decisionMeta);
     }
 
     const selected = readKnowledgeBaseEntries(options, decision.chosen);
@@ -597,4 +504,44 @@ function safeParseRecord(value: string): Record<string, unknown> | null {
   } catch {
     return null;
   }
+}
+
+/** Decision metadata shared by tool and knowledge selection. */
+function decisionMetaFor(
+  decision: {
+    decisionId: string;
+    confidence: number;
+    latencyMs: number;
+    modelVersion: string;
+    candidateCount: number;
+    transport?: { mode?: string; descriptionChars?: number; catalogFingerprint?: string; catalogTotal?: number; shortlist?: number; truncated?: boolean };
+    fallback?: string;
+  },
+  shortlist: ShortlistResult,
+): Record<string, unknown> {
+  return {
+    ...shortlistMeta(shortlist),
+    decisionId: decision.decisionId,
+    confidence: decision.confidence,
+    latencyMs: decision.latencyMs,
+    modelVersion: decision.modelVersion,
+    candidateCount: decision.candidateCount,
+    catalogFingerprint: decision.transport?.catalogFingerprint ?? null,
+    catalogCandidates: decision.transport?.catalogTotal ?? shortlist.total,
+    shortlistCandidates: decision.transport?.shortlist ?? shortlist.candidates.length,
+    descriptionChars: decision.transport?.descriptionChars ?? null,
+    transportMode: decision.transport?.mode ?? null,
+    truncated: decision.transport?.truncated ?? null,
+    fallback: decision.fallback ?? null,
+  };
+}
+
+function shortlistMeta(shortlist: ShortlistResult): Record<string, unknown> {
+  return {
+    shortlistSignal: shortlist.signal,
+    shortlistTotal: shortlist.total,
+    shortlistSent: shortlist.candidates.length,
+    shortlistDropped: shortlist.dropped,
+    shortlistFallback: shortlist.fallback,
+  };
 }

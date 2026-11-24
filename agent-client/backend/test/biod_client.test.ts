@@ -101,7 +101,7 @@ test('health and version are parsed without throwing', async () => {
   try {
     const client = clientFor(server);
     assert.deepEqual(await client.health(), { ok: true, status: 'ready', modelVersion: 'biod-v0-final', error: undefined });
-    assert.deepEqual(await client.version(), { ok: true, modelVersion: 'biod-v0-final', optionIds: { tool: ['a'], kb: ['b'] }, error: undefined });
+    assert.deepEqual(await client.version(), { ok: true, modelVersion: 'biod-v0-final', optionIds: { tool: ['a'], kb: ['b'] }, supportsCandidateDescriptions: false, error: undefined });
   } finally {
     await server.close();
   }
@@ -127,7 +127,14 @@ test('decideTool maps a decision and forwards kind/candidates/policy', async () 
     assert.equal(server.requests[0].url, '/v1/decide');
     assert.equal(sent.kind, 'tool');
     assert.equal(sent.state, 'fix the crash');
-    assert.deepEqual(sent.candidates, ['skill:exec', 'mcp:fs']);
+    assert.deepEqual(sent.candidates, [
+      { id: 'skill:exec', name: 'exec', description: 'run a command', kind: 'skill' },
+      { id: 'mcp:fs', name: 'fs', description: 'read files', kind: 'mcp' },
+    ]);
+    assert.equal(sent.catalog.id, 'toollibrary');
+    assert.equal(sent.catalog.total, 2);
+    assert.equal(sent.catalog.shortlist, 2);
+    assert.equal(sent.catalog.fingerprint.length, 64);
     assert.deepEqual(sent.policy, { tau: 0.5 });
     assert.equal(typeof sent.requestId, 'string');
   } finally {
@@ -158,6 +165,7 @@ test('decideKb maps a knowledge decision and sends topK', async () => {
     assert.equal('noToolProb' in result, false);
     const sent = JSON.parse(server.requests[0].body);
     assert.equal(sent.kind, 'kb');
+    assert.equal(sent.catalog.id, 'knowledgebase');
     assert.deepEqual(sent.policy, { tau: 0.5, topK: 3 });
   } finally {
     await server.close();
@@ -199,12 +207,71 @@ test('an empty group batch is answered locally', async () => {
   }
 });
 
+test('a sidecar transport echo is preferred over the local estimate', async () => {
+  const server = await startServer((_request, response) =>
+    sendJson(response, 200, {
+      ...toolDecision,
+      transport: {
+        mode: 'descriptions',
+        candidateCount: 2,
+        descriptionChars: 21,
+        truncated: false,
+        catalogFingerprint: 'echoed-fingerprint',
+        catalogTotal: 2,
+        shortlist: 2,
+      },
+    }),
+  );
+  try {
+    const result = await clientFor(server).decideTool('fix the crash', candidates, { tau: 0.5 });
+    assertSuccess(result);
+    assert.equal(result.transport?.descriptionChars, 21);
+    assert.equal(result.transport?.catalogFingerprint, 'echoed-fingerprint');
+    assert.equal(result.transport?.mode, 'descriptions');
+  } finally {
+    await server.close();
+  }
+});
+
+test('ids mode sends only ids for an older sidecar', async () => {
+  const server = await startServer((_request, response) => sendJson(response, 200, toolDecision));
+  try {
+    const result = await clientFor(server).decideTool(
+      'fix the crash', candidates, { tau: 0.5 }, undefined, undefined, { candidates: 'ids' },
+    );
+    assertSuccess(result);
+    assert.equal(result.transport?.mode, 'ids');
+    const sent = JSON.parse(server.requests[0].body);
+    assert.deepEqual(sent.candidates, ['skill:exec', 'mcp:fs']);
+    assert.equal(sent.catalog.descriptionChars, 0);
+  } finally {
+    await server.close();
+  }
+});
+
 test('5xx is bad_response', async () => {
   const server = await startServer((_request, response) => sendJson(response, 500, { ok: false, error: { code: 'INTERNAL', message: 'boom' } }));
   try {
     const result = await clientFor(server).decideTool('state', candidates, { tau: 0.5 });
     assertFailure(result);
     assert.equal(result.reason, 'bad_response');
+  } finally {
+    await server.close();
+  }
+});
+
+test('prompt-too-long does not open the health circuit', async () => {
+  const server = await startServer((_request, response) =>
+    sendJson(response, 413, { error: { code: 'PROMPT_TOO_LONG', message: 'prompt exceeds max_len' } }),
+  );
+  try {
+    const client = clientFor(server);
+    for (let index = 0; index < 6; index += 1) {
+      const result = await client.decideTool('state', candidates, { tau: 0.5 });
+      assertFailure(result);
+      assert.equal(result.reason, 'prompt_too_long');
+    }
+    assert.equal(server.requests.length, 6);
   } finally {
     await server.close();
   }
@@ -233,6 +300,20 @@ test('HTTP 400 CKPT_MISMATCH is catalog_mismatch', async () => {
     assertFailure(result);
     assert.equal(result.reason, 'catalog_mismatch');
     assert.match(result.message ?? '', /unknown candidate id/);
+  } finally {
+    await server.close();
+  }
+});
+
+test('HTTP 413 PROMPT_TOO_LONG stays observable for the browse fallback', async () => {
+  const server = await startServer((_request, response) =>
+    sendJson(response, 413, { error: { code: 'PROMPT_TOO_LONG', message: 'prompt exceeds max_len' } }),
+  );
+  try {
+    const result = await clientFor(server).decideTool('state', candidates, { tau: 0.5 });
+    assertFailure(result);
+    assert.equal(result.reason, 'prompt_too_long');
+    assert.match(result.message ?? '', /prompt exceeds max_len/);
   } finally {
     await server.close();
   }

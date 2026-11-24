@@ -2,26 +2,36 @@
 
 **A local-first, team-based bioinformatics agent with a trained decision layer.**
 
-Bioflow runs a small research team — PI, Searcher, Researcher, Writer, and Reviewer — on top of a bioinformatics runtime. Instead of asking the main LLM to make every small choice, it delegates five routine coordination decisions to a locally served 4B decision model:
+Bioflow runs a small research team — PI, Searcher, Researcher, Writer and Reviewer — on top of a
+bioinformatics runtime. The main LLM plans, writes and executes code and interprets results; a small
+locally served decision model (`biod-mt-v2`) answers three typed decisions so that the installed
+capability and knowledge catalogs can grow without the main prompt growing with them.
 
 | Decision | Question | Fallback |
 |---|---|---|
-| `tool_select` | Which capability should be loaded next? | browse the catalog |
-| `kb_select` | Which knowledge entries are relevant? | index/catalog |
-| `context_retention` | Which context groups should be kept? | rule-based prior |
-| `role_select` | Which role should answer this message? | PI |
-| `relay_select` | May this role-to-role relay proceed? | escalate to PI |
+| capability selection (`tool_select`) | Which capability should be loaded next? | browse the catalog |
+| knowledge selection (`kb_select`) | Which knowledge entries are relevant? | index / catalog |
+| context retention (`context_retention`) | Which cold-zone context groups should be kept? | rule-based baseline |
 
-Every decision is logged with its confidence, latency, and model version. Any failure falls back to the original path; a session never blocks on the decision layer.
+Role routing and relay gating are separate team-layer calls to the same sidecar; they are not part of
+the three evaluated decisions described in the accompanying manuscript. Every sidecar decision is
+logged with its confidence, latency and model version, and every failure mode falls back to the
+original path — a session never blocks on the decision layer.
 
 ## Why this design
 
-Bioinformatics work is a long sequence of small, consequential choices: the right tool, the right reference build, the right knowledge, the right owner for a message. General-purpose agents make these choices implicitly inside the main LLM. Bioflow separates them:
+Bioinformatics work is a long sequence of small, consequential choices: the right tool, the right
+reference build, the right knowledge, the right owner for a message. General-purpose agents make
+these choices implicitly inside the main LLM. Bioflow separates them:
 
-- **Bounded decisions → a small, trained model.** The 4B `biod-mt-v2` layer answers typed multiple-choice questions in one forward pass (76–538 ms p50 on a single GPU).
-- **Open reasoning → the main LLM.** The main model plans, writes code, interprets results, and handles anything the decision layer is unsure about.
-- **A fixed team → explicit handoffs.** Five roles share a workspace but not a transcript; handoffs are runtime-generated cards, and role-to-role relays pass through a gate.
-- **Audit by default.** Decisions, tool calls, artifacts, and run manifests are recorded so an analysis can be inspected and re-run.
+- **Bounded decisions → a small, trained model.** The sidecar answers typed multiple-choice questions
+  in one forward pass and returns a bounded label or score.
+- **Open reasoning → the main LLM.** The main model plans, writes code, interprets results and
+  handles anything the decision layer is unsure about.
+- **A fixed team → explicit handoffs.** Five roles share a workspace but not a transcript; handoffs
+  are runtime-generated cards.
+- **Audit by default.** Decisions, tool calls, artifacts and run manifests are recorded so an
+  analysis can be inspected and re-run.
 
 ## Architecture
 
@@ -37,19 +47,22 @@ PI ── decompose / dispatch / arbitrate / accept
 
 Shared workspace · merged timeline · no shared transcript
 
-Main LLM ──HTTP──► biod sidecar (4B, 7 heads)
-                     tool / kb / context / role / relay
-                     + S2 / R1 / W1 / V1 audit points
+Main LLM ──HTTP──► biod sidecar (4B)
+                     capability / knowledge / context decisions
+                     (role routing and relay gating are team-layer calls)
 ```
 
 ## What is in this repository
 
-- `agent-client/backend` — the agent runtime, REST/SSE API, team orchestration, decision-layer integration.
-- `agent-client/web` — the web UI.
+- `agent-client/backend` — the agent runtime, REST API (NDJSON run stream), team orchestration and
+  the decision-layer HTTP client.
+- `agent-client/web` — the web UI; it consumes `/api` only.
 - `agent-client/skills`, `knowledgebase`, `toollibrary` — on-demand capability and knowledge catalogs.
 - `clitool/` — bioinformatics CLI tools used by the agent.
-- `services/biod2-4b/` — the decision-layer service unit (weights are downloaded separately).
-- `docs/` — architecture, deployment, development, and decision-layer integration notes.
+- `docs/` — architecture, deployment, development and decision-layer integration notes.
+
+The decision model itself (training code, serving code and weights) lives in the companion repository
+[Biod](https://github.com/wer1477/bioflow-biod).
 
 ## Quick start
 
@@ -72,24 +85,40 @@ cp agent-client/.env.example agent-client/backend/.env
 
 Open `http://localhost:3000`. The API health check is `GET /api/health`.
 
-For the decision layer, see `services/biod2-4b/README.md` and `docs/biod-integration.md`. The 4B weights are released on Hugging Face at `wer1477/biod-mt-v2-4b`; download them into `services/biod2-4b/weights/` with `services/biod2-4b/bin/download-weights.sh`, then start the sidecar with `services/biod2-4b/bin/start.sh`.
+## Decision-layer weights
+
+The evaluated sidecar checkpoint is released at
+[huggingface.co/wer1477/biod-mt-v2-4b](https://huggingface.co/wer1477/biod-mt-v2-4b): a frozen
+Qwen3.5-4B-Base text tower with LoRA adapters and five routing heads. Download it with
+`scripts/download-weights.sh` from the Biod repository, then point the backend at the Biod checkout
+and the checkpoint:
+
+```bash
+# agent-client/backend/.env
+BIOFLOW_BIOD_PYTHON=/path/to/Biod/.venv/bin/python
+BIOFLOW_BIOD_REPO=/path/to/Biod
+BIOFLOW_BIOD_CKPT=/path/to/biod-mt-v2-4b
+```
+
+The backend starts the sidecar on demand and falls back to browsing when it is unavailable. See
+`docs/biod-integration.md` and the Biod repository for the serving contract.
 
 ## Evaluation
 
-The system is evaluated on public plant bioinformatics benchmarks, including PhytoBench-Analysis and BixBench, with ablations for the team and the decision layer. Benchmark adapters, prompts, and scores will be released in a companion repository (`plant-benchmark`) together with the paper.
+This repository contains the runtime and the decision-layer integration. The controlled evaluation in
+the accompanying manuscript — verified-asset reuse, native tool selection, knowledge selection,
+cold-zone retention, and a public plant-workflow case — used frozen harnesses, prompts, configuration
+fingerprints and result tables that are provided with the review package rather than in this
+repository. No benchmark score is claimed here.
 
 ## Citation
 
-If you use Bioflow in your research, please cite the paper (in preparation) and this repository. A `CITATION.cff` is provided.
+If you use this software, please cite the paper and this repository. See `CITATION.cff`.
 
 ## License
 
-Apache-2.0. Third-party skills and knowledge entries retain their original licenses; see `NOTICE`.
+Apache-2.0. The base model is governed by the Qwen model license; see `NOTICE`.
 
 ## Security
 
-Bioflow executes local commands and Python/R analyses. Run it only in a trusted workspace. To report a vulnerability, see `SECURITY.md`.
-
----
-
-中文说明见 [README.zh.md](README.zh.md)。
+Please do not open a public issue for a suspected vulnerability. See `SECURITY.md`.

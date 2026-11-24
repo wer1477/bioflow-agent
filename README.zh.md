@@ -1,113 +1,113 @@
-# Bioflow
+# Bioflow Agent
 
-Bioflow 是一个在本地运行、面向生物研究任务的 Agent 平台。它以 `agent-client/backend` 中的 Agent 运行时为核心，提供 REST 和 SSE API；`agent-client/web` 仅负责呈现与交互。
+**本地优先、基于团队协作、带训练决策层的生物信息学 Agent。**
 
-> 本仓库当前以 Linux/macOS（或 Windows 的 WSL）为主要开发环境。运行时会执行本地命令和 Python/R 分析，请只在受信任的工作区中启动。
+Bioflow 在生物信息学运行时之上运行一个小型研究团队：PI、Searcher、Researcher、Writer 和
+Reviewer。主 LLM 负责规划、写代码、执行与解读结果；一个本地部署的小型决策模型
+（`biod-mt-v2`）负责三类结构化决策，使已装载的能力库与知识库可以增长，而主提示词不随之线性增长。
+
+| 决策 | 问题 | 回退 |
+|---|---|---|
+| 能力选择（`tool_select`） | 下一步应加载哪个能力？ | 浏览目录 |
+| 知识选择（`kb_select`） | 哪些知识条目相关？ | 索引 / 目录 |
+| 上下文保留（`context_retention`） | 冷区上下文组中哪些应保留？ | 规则基线 |
+
+角色路由与 relay 门控由团队层直接调用同一个 sidecar，不属于论文中评测的三类决策。每次
+sidecar 决策都会记录置信度、延迟与模型版本；任何失败都会回退到原有路径——会话不会因决策层
+不可用而阻塞。
+
+## 设计动机
+
+生物信息学工作是一长串细小但关键的判断：用哪个工具、哪个参考版本、哪条知识、由谁回答一条消息。
+通用 Agent 在主 LLM 内部隐式完成这些选择。Bioflow 把它们拆开：
+
+- **有界决策 → 小模型。** sidecar 在一次前向中回答结构化选择题，返回有界标签或分数。
+- **开放推理 → 主 LLM。** 主模型负责规划、写代码、解读结果，并处理决策层不确定的部分。
+- **固定团队 → 显式交接。** 五个角色共享工作区但不共享对话记录；交接以运行时生成的卡片表达。
+- **默认可审计。** 决策、工具调用、产物与 run manifest 都被记录，分析过程可检查、可重跑。
+
+## 架构
+
+```text
+用户
+ │
+ ▼
+PI ── 拆解 / 分派 / 仲裁 / 验收
+ ├─ Searcher   文献、证据、假设
+ ├─ Researcher 设计与执行、统计、解读
+ ├─ Writer     叙事、图表、引用、投稿
+ └─ Reviewer   新颖性、方法、统计、一致性
+
+共享工作区 · 合并时间线 · 不共享对话记录
+
+主 LLM ──HTTP──► biod sidecar（4B）
+                   能力 / 知识 / 上下文决策
+                   （角色路由与 relay 门控由团队层直接调用）
+```
+
+## 仓库内容
+
+- `agent-client/backend` —— Agent 运行时、REST API（run 流为 NDJSON）、团队编排、决策层 HTTP 客户端。
+- `agent-client/web` —— Web UI，只消费 `/api`。
+- `agent-client/skills`、`knowledgebase`、`toollibrary` —— 按需加载的能力与知识目录。
+- `clitool/` —— Agent 使用的生信 CLI 工具。
+- `docs/` —— 架构、部署、开发与决策层集成说明。
+
+决策模型本身（训练代码、服务代码与权重）位于配套仓库
+[Biod](https://github.com/wer1477/bioflow-biod)。
 
 ## 快速开始
 
-### 1. 准备运行环境
-
-- Git
-- Node.js `22.12.0` 或更高版本（推荐用仓库中的 `.nvmrc`）
-- Conda 或 Micromamba（用于 Python/R 生信环境）
-
-在仓库根目录创建 Python/R 环境。**prefix 必须写绝对路径**：micromamba（以及 conda）会把相对 prefix 解析到 `$MAMBA_ROOT_PREFIX/envs/` 下，而不是当前目录，于是环境不会出现在仓库里、`scripts/activate-bioenv.sh` 也找不到它。
-
 ```bash
+# 1) Python/R 环境
 micromamba env create --prefix "$PWD/.bioenv" --file environment.yml
-# 使用 conda 时：conda env create --prefix "$PWD/.bioenv" --file environment.yml
 source scripts/activate-bioenv.sh
-```
+scripts/setup-cli-tools.sh --skip-homer-data
 
-MACS2 没有可用于当前 glibc/Python 的 conda 构建、HOMER 参考基因组也不在 conda 包内，因此首次创建环境后再执行一次：
+# 2) Node 依赖
+cd agent-client && npm run install:all && cd ..
 
-```bash
-scripts/setup-cli-tools.sh                                      # MACS2 工具环境 + HOMER hg38
-scripts/setup-cli-tools.sh --skip-homer-data                    # 只装 MACS2
-```
+# 3) 配置 LLM 端点
+cp agent-client/.env.example agent-client/backend/.env
+# 编辑 agent-client/backend/.env
 
-`bio-doctor check --format json` 与 `bio-peak tools --format json` 可确认 clitool 外部依赖是否就绪。
-
-`scripts/setup-ngs-tools.sh` 会把 `fastp`/`bwa`/`STAR`/`salmon`/`megahit`/`kraken2`/`kaiju`/`taxpasta`/`seqkit`/`subread` 安装到 `.tools/ngs`，并在 `.bioenv/bin` 生成 wrapper；`bio-align check` 与 `bio-metagenomics check` 可确认。Kraken2/Kaiju 的分类数据库需另行准备。
-
-安装 Node 依赖：
-
-```bash
-cd agent-client
-npm run install:all
-```
-
-### 2. 配置本地密钥
-
-后端默认从 `agent-client/backend/.env` 读取本地密钥，也接受启动前由 shell 导出的变量。复制示例后，至少填入当前默认 LLM 的密钥；若保留默认的 `tavily`、`exa`、`context7` MCP，也填入对应的三个密钥变量。`biomcp` 与 `tooluniverse` 默认启用但不需要密钥，需要先安装本地二进制：`uv tool install biomcp-cli` 与 `uv tool install tooluniverse==1.5.7`（安装到 `~/.local/bin`，配置会通过 `bash -c` 包装注入 PATH）；`biocontext` 是托管远程服务，默认启用且不需要密钥；`chatspatial` 与 `seqera` 默认关闭，按需启用。
-
-`backend/config/llm_presets.json` 为“新建供应商”弹窗提供 29 条预设：主流厂商（OpenAI、Anthropic、Gemini、DeepSeek、通义千问、Kimi、智谱、豆包、MiniMax、阶跃、硅基流动等）、订阅制 coding plan（智谱 GLM Coding、Kimi For Coding、阿里 Token Plan、小米 MiMo、MiniMax 国内、Moonshot 国内），以及 OpenRouter/Groq/Mistral/xAI/Together/Fireworks/NVIDIA NIM/Baseten 等网关。设置页默认仍只显示 `llm.json` 中的 `dgx`，不会自动增加供应商。
-
-```bash
-cd agent-client
-cp .env.example backend/.env
-# 编辑 backend/.env
-```
-
-`backend/.env` 不会被 Git 跟踪。Web/CLI 可接受明文凭据，但会自动转存到该本地文件，并在配置 JSON 中写入环境变量引用（例如 `${BIOFLOW_LLM_API_KEY_DGX}`）；不要手工把密钥提交到 `backend/config/*.json`。
-
-### 3. 启动
-
-开发时分别启动 API/运行时和前端：
-
-```bash
-cd agent-client
-npm run dev          # 后端：http://localhost:3000
-npm run dev:web      # 前端：http://localhost:5173，/api 默认代理至 :3000（可用 BIOFLOW_API_TARGET 覆盖）
-```
-
-或构建一次后从仓库根目录启动整合服务：
-
-```bash
+# 4) 启动
 ./bioflow --port 3000
 ```
 
-若同一台机器上已有实例占用 `3000`，用独立端口启动开发栈：
+打开 `http://localhost:3000`；健康检查为 `GET /api/health`。
+
+## 决策层权重
+
+评测使用的 sidecar 权重发布在
+[huggingface.co/wer1477/biod-mt-v2-4b](https://huggingface.co/wer1477/biod-mt-v2-4b)：冻结的
+Qwen3.5-4B-Base 文本塔 + LoRA adapter + 五个路由头。用 Biod 仓库里的
+`scripts/download-weights.sh` 下载后，把后端指向 Biod 检出与权重目录：
 
 ```bash
-PORT=3001 npm run dev                                      # 后端换到 3001
-BIOFLOW_API_TARGET=http://localhost:3001 npm run dev:web    # 前端 /api 代理指向 3001
+# agent-client/backend/.env
+BIOFLOW_BIOD_PYTHON=/path/to/Biod/.venv/bin/python
+BIOFLOW_BIOD_REPO=/path/to/Biod
+BIOFLOW_BIOD_CKPT=/path/to/biod-mt-v2-4b
 ```
 
-健康检查：`curl http://localhost:3000/api/health`
+后端会按需拉起 sidecar；sidecar 不可用时自动回退到浏览。服务契约见
+`docs/biod-integration.md` 与 Biod 仓库。
 
-## 架构与目录
+## 评测说明
 
-```text
-agent-client/
-  backend/       Express + TypeScript：Agent 运行时、REST API（run 流为 NDJSON）、MCP、配置读取
-  web/           React + Vite：前端交互壳，所有能力通过 /api 调用后端
-  skills/        本地 Skill：每个目录包含 SKILL.md，可附带 resources/
-  knowledgebase/ 只读知识库：领域/条目/skill.md + 可查看 resources/，不含可执行脚本
-  toollibrary/   能力库展示层：领域索引常驻 system prompt，每个领域的工具 name/description（skill 与 MCP）供 toollibrary/toolload 按需读取
-  workspace/     对话快照、运行记录和产物文件（本地状态，不提交）
-  data/          本地分析数据（不提交）
-clitool/         独立生信 CLI 工具及各自的测试；默认 Agent 指令位于 agent-client/skills/ 并由 agents.json 绑定
-environment.yml  Python/R 生信运行环境
-requirements.txt Python 直接依赖的精确版本
-```
+本仓库提供运行时与决策层集成。论文中的受控评测——已验证资产复用、原生工具选择、知识选择、
+冷区保留以及一个公开植物工作流案例——使用冻结的 harness、提示词、配置指纹与结果表，随审稿包
+提供，不在本仓库内。本仓库不声称任何 benchmark 分数。
 
-配置的源码在 `agent-client/backend/config/`：`agents.json`、`llm.json`、`llm_presets.json`、`mcp.json`、`biod.json` 和 `prompts/*.md`。运行时直接读取这些文件；Web 设置页的配置修改也会写回这里。`llm_presets.json` 是主流供应商预设覆盖层（OpenAI 兼容端点、精选模型顺序与置顶排序），与自动生成的 `llm_catalog.json` 分开维护；`npm --prefix backend run probe:presets` 会无凭据探测每条预设的 `/models` 端点，用来确认当前网络能不能连上（详见 `agent-client/backend/config/README.md`）。若需要使用另一套配置，将 `BIOFLOW_CONFIG_DIR` 指向该目录。
+## 引用
 
-## 开发与验证
+如果使用本软件，请引用论文与本仓库，见 `CITATION.cff`。
 
-在 `agent-client/` 下运行：
+## 许可
 
-```bash
-npm run build        # 依次构建 Web 与 Backend（Backend 同时做 TypeScript 检查）
-npm run test         # 运行 Backend 与 Web 测试
-```
+Apache-2.0。基座模型遵循 Qwen 模型许可，见 `NOTICE`。
 
-更详细的协作约定、测试命令、配置边界和 MCP 命令行维护方式见 [docs/development.md](docs/development.md)。
+## 安全
 
-## 协作边界
-
-- 改 Agent 行为、状态、工具、MCP、Skill 或编排时，改后端及其 API；不要让 Web 直接依赖运行时内部模块。
-- 不提交 `.env`、`.bioenv/`、`workspace/`、`data/`、`node_modules/` 或构建产物。
-- `backend/config/`、`skills/`、`knowledgebase/`、`toollibrary/` 和共享提示词容易产生冲突；变更前先同步并在 PR 中说明兼容性和所需环境变量。
+如发现疑似漏洞，请不要公开提 issue，见 `SECURITY.md`。

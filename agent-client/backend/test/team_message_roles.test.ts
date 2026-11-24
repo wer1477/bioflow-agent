@@ -138,10 +138,14 @@ test('an undecided peer relay escalates to the lead instead of blocking the role
     assert.match(queued[0].body, /\[待裁决\]/);
     assert.match(queued[0].body, /需要对照组的样本量/);
 
-    // The lead keeps visibility without being woken: the notice is in its transcript.
+    const [request, escalation] = readTeamState(root.id).messages;
+    assert.equal(request.kind, 'relay');
+    assert.equal(request.from, 'searcher');
+    assert.equal(request.to, 'writer');
+    assert.equal(request.gate?.verdict, 'escalate');
+    assert.equal(escalation.id, queued[0].id);
     const leadSession = ensureRoleSession(root.id, 'pi');
-    const notices = listContextMessages(leadSession.id);
-    assert.ok(notices.some((entry) => entry.content.includes('[团队通信 · searcher → writer')), 'the lead sees the request');
+    assert.equal(listContextMessages(leadSession.id).length, 0, 'audit is stored on the team channel');
   });
 });
 

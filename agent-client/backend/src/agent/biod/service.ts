@@ -48,6 +48,7 @@ import type {
 } from './writer/contracts.js';
 import type {
   BiodCandidate,
+  BiodCatalogMeta,
   BiodDecisionPoint,
   BiodFailure,
   BiodFailureReason,
@@ -114,6 +115,8 @@ export interface BiodDecisionInput {
   candidates: BiodCandidate[];
   /** Optional role prefix, so the multitask model sees the same layout as training. */
   role?: string;
+  /** Full-catalog identity, computed before the native shortlist/budget. */
+  catalog?: BiodCatalogMeta;
 }
 
 function withRole(input: BiodDecisionInput): string {
@@ -155,6 +158,8 @@ export class BiodService {
   private startPromise: Promise<void> | null = null;
   /** Checkpoint vocabulary; absent means "do not mask" (older sidecar / test double). */
   private vocab: { tool: Set<string>; kb: Set<string> } | null = null;
+  /** Newer sidecars render candidate cards; older ones only resolve checkpoint ids. */
+  private candidateDescriptions = true;
 
   constructor(options: BiodServiceOptions = {}) {
     this.providedConfig = options.config;
@@ -539,17 +544,26 @@ export class BiodService {
     }
     const config = this.config();
     const policy = config.decisionPoints.tool_select;
-    const candidates = this.maskCandidates('tool', input.candidates);
-    if (!candidates.length) {
-      const failure: BiodFailure = { ok: false, reason: 'catalog_mismatch', message: 'no candidate is in the checkpoint vocabulary' };
+    if (!input.candidates.length) {
+      const failure: BiodFailure = { ok: false, reason: 'catalog_mismatch', message: 'no tool candidates' };
       this.recordFailure('tool', guard.state, failure);
       return failure;
     }
+    // Full cards first: a checkpoint trained as a pointer over rendered options does not
+    // need the id vocabulary. Masked retry is a compatibility path for checkpoints that do.
     const result = await this.callClient('tool', guard.state, () =>
-      this.client().decideTool(guard.state, candidates, { tau: policy.tau }),
+      this.client().decideTool(
+        guard.state,
+        input.candidates,
+        { tau: policy.tau },
+        undefined,
+        input.catalog,
+        { candidates: this.candidateDescriptions ? 'descriptions' : 'ids' },
+      ),
     );
-    this.recordDecision('tool', guard.state, result);
-    return result;
+    const retried = await this.retryMasked('tool', guard.state, input.candidates, result, policy.tau, undefined, input.catalog);
+    this.recordDecision('tool', guard.state, retried, input.candidates);
+    return retried;
   }
 
   async decideKnowledge(input: BiodDecisionInput): Promise<BiodResult<BiodKbDecision>> {
@@ -560,17 +574,56 @@ export class BiodService {
     }
     const config = this.config();
     const policy = config.decisionPoints.kb_select;
-    const candidates = this.maskCandidates('kb', input.candidates);
-    if (!candidates.length) {
-      const failure: BiodFailure = { ok: false, reason: 'catalog_mismatch', message: 'no candidate is in the checkpoint vocabulary' };
+    if (!input.candidates.length) {
+      const failure: BiodFailure = { ok: false, reason: 'catalog_mismatch', message: 'no knowledge candidates' };
       this.recordFailure('kb', guard.state, failure);
       return failure;
     }
     const result = await this.callClient('kb', guard.state, () =>
-      this.client().decideKb(guard.state, candidates, { tau: policy.tau, topK: policy.topK }),
+      this.client().decideKb(
+        guard.state,
+        input.candidates,
+        { tau: policy.tau, topK: policy.topK },
+        undefined,
+        input.catalog,
+        { candidates: this.candidateDescriptions ? 'descriptions' : 'ids' },
+      ),
     );
-    this.recordDecision('kb', guard.state, result);
-    return result;
+    const retried = await this.retryMasked('kb', guard.state, input.candidates, result, policy.tau, policy.topK, input.catalog);
+    this.recordDecision('kb', guard.state, retried, input.candidates);
+    return retried;
+  }
+
+  /**
+   * If a card request fails on a sidecar whose checkpoint still declares an id vocabulary,
+   * retry once with only known ids. The decision carries `fallback: 'masked_retry'` so a
+   * reader can tell a compatibility success from a normal full-card decision.
+   */
+  private async retryMasked<T extends { ok: true }>(
+    kind: 'tool' | 'kb',
+    state: string,
+    candidates: BiodCandidate[],
+    result: BiodResult<T>,
+    tau: number,
+    topK?: number,
+    catalog?: BiodCatalogMeta,
+  ): Promise<BiodResult<T>> {
+    if (result.ok) return result;
+    if (!this.vocab?.[kind].size) return result;
+    if (result.reason !== 'catalog_mismatch' && result.reason !== 'bad_response') return result;
+    const masked = this.maskCandidates(kind, candidates);
+    if (!masked.length || masked.length === candidates.length) return result;
+    const retry = await this.callClient(kind, state, () =>
+      kind === 'tool'
+        ? this.client().decideTool(state, masked, { tau }, undefined, catalog, {
+            candidates: this.candidateDescriptions ? 'descriptions' : 'ids',
+          }) as Promise<BiodResult<T>>
+        : this.client().decideKb(state, masked, { tau, topK: topK ?? 3 }, undefined, catalog, {
+            candidates: this.candidateDescriptions ? 'descriptions' : 'ids',
+          }) as Promise<BiodResult<T>>,
+    );
+    if (retry.ok) (retry as { fallback?: 'masked_retry' }).fallback = 'masked_retry';
+    return retry.ok ? retry : result;
   }
 
   async scoreGroups(input: BiodScoreGroupsInput): Promise<BiodResult<BiodGroupScores>> {
@@ -618,8 +671,11 @@ export class BiodService {
     }
 
     const version = await this.client().version();
-    if (version.ok && version.optionIds) {
-      this.vocab = { tool: new Set(version.optionIds.tool), kb: new Set(version.optionIds.kb) };
+    if (version.ok) {
+      this.candidateDescriptions = version.supportsCandidateDescriptions === true;
+      if (version.optionIds) {
+        this.vocab = { tool: new Set(version.optionIds.tool), kb: new Set(version.optionIds.kb) };
+      }
     }
     this.setStatus({ enabled: true, ready: true, modelVersion: health.modelVersion });
     const adopted = isAdopted(this.supervisor());
@@ -670,7 +726,7 @@ export class BiodService {
     }
   }
 
-  private recordDecision(kind: DecisionKind, state: string, result: BiodResult<unknown>): void {
+  private recordDecision(kind: DecisionKind, state: string, result: BiodResult<unknown>, candidates?: BiodCandidate[]): void {
     const entry: Record<string, unknown> = {
       ts: new Date().toISOString(),
       kind,
@@ -693,6 +749,24 @@ export class BiodService {
       entry.latencyMs = decision.latencyMs ?? null;
       entry.modelVersion = decision.modelVersion ?? null;
       entry.candidateCount = decision.candidateCount ?? decision.scores?.length ?? null;
+      if (candidates?.length) {
+        const byId = new Map(candidates.map((candidate) => [candidate.id, candidate]));
+        entry.chosenAssets = (decision.chosen ?? []).map((id) => {
+          const candidate = byId.get(id);
+          return { id, version: candidate?.version ?? null, name: candidate?.name ?? null };
+        });
+      }
+      const transport = (decision as { transport?: { mode?: string; descriptionChars?: number; catalogFingerprint?: string; catalogTotal?: number; shortlist?: number; truncated?: boolean } }).transport;
+      if (transport) {
+        entry.transportMode = transport.mode ?? null;
+        entry.descriptionChars = transport.descriptionChars ?? null;
+        entry.catalogFingerprint = transport.catalogFingerprint ?? null;
+        entry.catalogTotal = transport.catalogTotal ?? null;
+        entry.shortlist = transport.shortlist ?? null;
+        entry.truncated = transport.truncated ?? null;
+      }
+      const fallback = (decision as { fallback?: string }).fallback;
+      if (fallback) entry.fallback = fallback;
     } else {
       entry.reason = (result as BiodFailure).reason;
       entry.message = (result as BiodFailure).message ?? null;
@@ -791,6 +865,7 @@ const FAILURE_REASONS: readonly BiodFailureReason[] = [
   'catalog_mismatch',
   'circuit_open',
   'model_mismatch',
+  'prompt_too_long',
 ];
 
 function isFailureReason(value: unknown): value is BiodFailureReason {

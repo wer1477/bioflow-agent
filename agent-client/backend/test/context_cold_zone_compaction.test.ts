@@ -16,6 +16,8 @@ async function startProvider(): Promise<{ server: Server; baseUrl: string }> {
               schemaVersion: 1,
               taskState: { userGoal: 'finish the run', currentStatus: 'in_progress' },
               stableFacts: [{ fact: 'the aligner finished', source: 'tool', confidence: 'high' }],
+              decisions: [], completedActions: [], pendingActions: [],
+              discardedContext: {}, continuationPrompt: 'continue',
             }),
           },
           finish_reason: 'stop',

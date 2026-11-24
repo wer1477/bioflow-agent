@@ -235,6 +235,12 @@ npm --prefix web test
 
 提交前至少运行与变更范围相符的测试；涉及 TypeScript、路由、配置或 UI 集成时，再运行 `npm run build`。使用锁文件安装时，在三个目录分别执行 `npm ci`：`agent-client/`、`agent-client/backend/`、`agent-client/web/`。
 
+## 任务运行中的上下文压缩
+
+上下文占用率按扣除输出预留后的输入预算计算。60% 是软水位，用于提示和运行后的检查点。达到 80% 时，后端在下一次模型请求前压缩历史，保留当前用户指令、原有工具和运行 ID。仍超过硬水位时，后端尝试缩短保留的近期历史，以及裁剪有轨迹原文引用的长工具结果。会改写模型输入的压缩只在实际降低预算估算时提交。
+
+恢复后仍可容纳完整请求时，同一次运行继续。上下文装不下时，运行以 `budget_exceeded` 失败并尝试保存检查点。当本轮已显式建立待办，模型提前结束会触发一次续跑提醒。相同待办再次被提前结束时，运行以 `unfinished_tasks` 失败。规划工具显式请求用户输入时，可以正常等待。
+
 ## 修改位置
 
 | 目标 | 主要位置 | 注意事项 |
@@ -293,7 +299,7 @@ toollibrary/
 
 工具缓存也按 workspace 隔离：`<workspace>/.cache/{pip,uv,xdg}`（登录版为每个用户的 `users/<id>/.cache/`）。shell、后台任务和 Python 内核会设置 `PIP_CACHE_DIR`、`UV_CACHE_DIR`、`XDG_CACHE_HOME`，所以 `pip`/`uv` 和 XDG 工具的缓存不会写进共享的 `~/.cache`。`npm` 仍使用 `~/.npm`。
 
-磁盘使用由 `scripts/check-disk-usage.sh` 每 30 分钟检查（deployment-host crontab）：`/` 或 `/data` 超过阈值、或 `~/.cache` 超过 5 GiB 时，写入 `~/.local/state/bioagent/disk-alert.log` 并记 syslog；设置 `BIOFLOW_DISK_ALERT_WEBHOOK` 可同时 POST 到聊天 webhook。阈值用 `BIOFLOW_DISK_WARN_PERCENT`、`BIOFLOW_DISK_CRIT_PERCENT`、`BIOFLOW_CACHE_WARN_GIB` 覆盖，手动检查用 `--test`。
+磁盘使用由 `scripts/check-disk-usage.sh` 每 30 分钟检查（system crontab）：`/` 或 `/data` 超过阈值、或 `~/.cache` 超过 5 GiB 时，写入 `~/.local/state/bioagent/disk-alert.log` 并记 syslog；设置 `BIOFLOW_DISK_ALERT_WEBHOOK` 可同时 POST 到聊天 webhook。阈值用 `BIOFLOW_DISK_WARN_PERCENT`、`BIOFLOW_DISK_CRIT_PERCENT`、`BIOFLOW_CACHE_WARN_GIB` 覆盖，手动检查用 `--test`。
 
 项目依赖默认装进 `<project>/.venv`：开启 `BIOFLOW_PROJECT_VENV=1` 且配置 `BIOAGENT_ENV_BIN` 后，shell、后台任务和 `execute_python` 都会使用项目 venv；venv 用 `--system-site-packages` 从共享主环境创建，基础包直接可见，额外的 `pip`/`uv` 安装只写入项目。`R_LIBS_USER` 指向 `<project>/.Rlib`。关闭开关即回到原来的共享解释器行为。
 

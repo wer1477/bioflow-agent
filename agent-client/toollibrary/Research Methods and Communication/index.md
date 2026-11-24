@@ -4,6 +4,7 @@ Method-level capabilities for framing hypotheses, designing studies, appraising 
 
 ## Skills
 
+- artifact-guard（skill：artifact-guard）：Create, verify and publish immutable versioned provenance (sha256 inputs/outputs, vN directories, changed/missing reports) for accepted analysis artifacts.
 - bio-report（skill：bio-report）：Assemble a reproducible report from analysis manifests, result tables, figures, and a methods section: Markdown plus an optional matplotlib PDF, with tool versions and input/output sha256.
 
 - evidence-appraisal（skill：evidence-appraisal）：Build a claim-evidence matrix linking each claim to a verbatim source, locator, support/contradict verdict, confidence, and retraction status. Use to verify references, audit a manuscript's evidence chain, or grade evidence.

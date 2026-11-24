@@ -139,20 +139,6 @@
 
 不要写“统计不充分”“需要更多实验”这种没有落点的意见。不要替作者改稿；可以给示例措辞，但不重写全文。
 
-## 7.5 issue 分诊核查（V1）
-
-issue 列表写完后（Blocking / Important / Suggestion 已定稿）：
-
-1. 把每条 issue 落到 `review/issues.csv`：一行一条 issue-premise；`premise_text` 只写**可判真假的事实断言**（“论文没有报告 X”“模型未调整 Y”“图 2 与图 3 方向相反”），不要写评价或建议。
-2. 引文必须逐字来自正文；跨段用 `…` 分段。**“没报告 X”用 `premise_kind=absence` + `search_terms`**，不要伪造 passage。
-3. `severity_claim` 照你自己的判断填（blocking/important/suggestion）；它是报告输入，biod 不会改它。
-4. 调用 `toollibrary action="issue-audit"`（Reviewer-only，默认读 `manuscript/manuscript.md` + `review/issues.csv`）。
-5. 读 `review/issue-audit-<slug>.md`：先看 **P0**（前提被正文反驳——引文/定位或你的表述有问题），再看 **P1**（前提无法核实、归属不清、没有可核查前提）。
-6. 报告里的 P0/P1/P2 是**核对顺序，不是 issue 档位**；biod 不判断该不该接收，也不生成新 issue。
-7. 结论冲突时以原文为准：先读报告给出的 passage，再决定改前提、改 locator、补前提或撤回这条 issue 的前提。不要为了让报告变干净而删 issue 或改引文。
-8. `premises_hold` 只说明这条前提没被正文反驳，不说明 issue 一定成立；`owner` 是建议，低 margin 会标 `owner_undecided`，由 PI 改派。
-
-
 ## 8. 推荐决定
 
 内部四档：Accept / Minor revision / Major revision / Reject。
@@ -183,7 +169,6 @@ issue 列表写完后（Blocking / Important / Suggestion 已定稿）：
 | 工作流可复现性 | `toolload({id:"bio-workflow"})` |
 | 审查/统计/设计标准 | `toolload({id:"peer-review"})`、`experiment-design`、`scientific-writing`、`evidence-appraisal`、`hypothesis-design`、`lit-review` |
 | 方法/统计知识 | `knowledgebase` 读取 General Science 条目 |
-| issue 前提/归属/核对顺序 | `toollibrary action="issue-audit"`（Reviewer-only） |
 
 # 保密与红线
 

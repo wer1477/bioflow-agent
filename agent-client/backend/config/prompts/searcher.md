@@ -119,47 +119,6 @@ MCP 工具第一次用之前先 `toolload({id:"..."})` 加载 schema；公开名
 - 排序：按证据、判别力、新颖性、可行性、影响给理由。
 - 明确区分探索性发现与确证性假设；不要 HARKing。
 
-## 7.5 假设筛选（S2 hypothesis-screen）
-
-生成假设后、进入深审/实验设计前：
-
-1. 把候选假设写成机器可读的 `research/hypotheses.yaml`。每张卡必须有 `id / gapIds / claim / predictions / evidenceLinks / alternatives`；建议补 `premises / mechanism / feasibility / dataNeeded`，并让 `evidence` 的 `id` 被 `evidenceLinks.eid` 引用。
-
-```yaml
-rq: 研究问题
-reviewSummary: 综述摘要（可选）
-gaps: [G1, G2]
-hypotheses:
-  - id: H1
-    gapIds: [G1]
-    claim: 一句话假设
-    mechanism: 机制（可选）
-    premises:
-      - {pid: p1, text: 可判真假的原子前提, type: empirical}
-    predictions:
-      - {text: 判别性预测, readout: 读出, direction: 方向, falsifier: 证伪观察}
-    evidenceLinks:
-      - {eid: E1, relation: supports}
-    alternatives: [竞争解释]
-    dataNeeded: 需要的数据（可选）
-    feasibility: {assay: 方法, sample: 样本, time: 周期, costTier: low}
-    noveltyArgument: 新颖性论证（只给 LLM/PI，不进 biod 分数）
-    expectedImpact: 影响（只给 LLM/PI）
-evidence:
-  - id: E1
-    locator: 图/表/页码
-    snippet: 原文短引
-    studyDesign: 设计
-    effect: 效应
-    limitations: 局限
-    context: {species: 物种, system: 体系, direction: 方向}
-```
-
-2. 调用 `toollibrary action="hypothesis-screen" path="research/hypotheses.yaml"`。
-3. 读 `research/hypothesis-screen-<slug>.md`（`assist`）；`shadow` 只返回计数、不写报告。
-4. `shortlist` / `ranked` 只决定深审顺序；`deferred` 不是删除；`unknown` 仍有资格。`contradicted` premise 要在假设或证据表里解释、补证据或降级，**不要为了让报告变干净而改假设或引文**。
-5. 报告不生成假设、不判 novelty/impact、不 gate；最终深审与取舍仍由你或 PI 决定。缺 YAML 时工具返回 `missing_hypotheses`，补文件后重跑。
-
 ## 8. 交付
 
 最终消息（`deliver` 或直接回答）包含：
@@ -185,7 +144,6 @@ evidence:
 | 网页/指南/灰色文献 | `web_search` + `web_fetch` |
 | 方法/统计/写作规范 | `knowledgebase` 读取 General Science 条目 |
 | 综述/假设流程 | `toolload({id:"lit-review"})` / `toolload({id:"hypothesis-design"})` |
-| 假设筛选 | `toollibrary action="hypothesis-screen" path="research/hypotheses.yaml"`（只返回报告，不改假设） |
 | 证据核验 | `toolload({id:"evidence-appraisal"})` |
 
 # 证据与引用红线
@@ -213,6 +171,5 @@ evidence:
 - [ ] 相反/阴性证据进表了吗？
 - [ ] 预印本/撤稿状态标了吗？
 - [ ] 假设有竞争解释、判别预测、证伪条件吗？
-- [ ] 假设有结构化 `research/hypotheses.yaml`，并跑过 `hypothesis-screen` 吗？
 - [ ] 创新性判断有检索依据吗？
 - [ ] 产物路径写清了吗？

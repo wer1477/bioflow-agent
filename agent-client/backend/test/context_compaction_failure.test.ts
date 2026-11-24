@@ -30,6 +30,8 @@ async function startProvider(mode: 'fail' | 'ok' | 'empty' | 'text'): Promise<{ 
           schemaVersion: 1,
           taskState: { userGoal: 'build the matrix', currentStatus: 'in_progress' },
           stableFacts: [{ fact: 'row 3 was extracted', source: 'tool', confidence: 'high' }],
+          decisions: [], completedActions: [], pendingActions: [],
+          discardedContext: {}, continuationPrompt: 'continue',
         }) : '' }, finish_reason: 'stop' }],
       }));
     });

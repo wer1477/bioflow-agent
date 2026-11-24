@@ -1,6 +1,7 @@
 import crypto from 'node:crypto';
 import type { ChatCompletionMessageParam } from 'openai/resources/chat/completions';
 import { getLLMClient } from './llm_client.js';
+import { appendSummaryCall, type SummaryAuditContext, type SummaryCallRecord } from './summary_audit.js';
 import type { AgentChatMessage, LLMConfig } from './types.js';
 import { IMAGE_TOKEN_ESTIMATE, countMessageImages, stripImageParts } from './core_tools/image_payload.js';
 import type { AgentRuntimeContext } from './service/agent_context_resolver.js';
@@ -43,19 +44,6 @@ const HARD_WATERMARK = 0.8;
  * Reviewing them together, in one diff, is the point.
  */
 export const CONTEXT_POLICY: ColdZonePolicy = DEFAULT_COLD_ZONE_POLICY;
-/**
- * Upper bound on in-run compaction attempts for one run.
- *
- * Compaction is not free: every attempt rewrites `messages[1..]` and spends one
- * summariser call. Without a cap, a run that keeps growing can cycle
- * "cross the hard watermark → compact → grow → compact" indefinitely, because the
- * runtime has no turn limit of its own. The cap is what turns that loop into a
- * bounded worst case; past it the hard-watermark guard stops the run instead.
- *
- * Attempts, not successes, are counted: a summariser that fails every turn would
- * otherwise be retried on every turn of the run, paying a call each time.
- */
-export const MAX_RUNTIME_COMPACTIONS = 3;
 /**
  * How much condensed cold-zone text one summariser call may read.
  *
@@ -150,29 +138,6 @@ export interface ManagedHistory {
    */
   discardedCheckpoint?: { id: string; reason: 'pinned_context_changed' };
   budget: ContextBudgetStatus;
-}
-
-/**
- * Whether the runtime should compact before its next model turn.
- *
- * Two watermarks, two different jobs:
- *
- * - **Soft (0.6)** marks the run for a checkpoint after it finishes. Compaction is
- *   deliberately *not* started here: it rewrites `messages[1..]`, and a provider's
- *   prefix cache matches only from token 0, so every rewrite invalidates the whole
- *   prefix for the rest of the run. With 40% of the window still free there is
- *   nothing to buy.
- * - **Hard (0.8)** is where continuing without the rewrite is no longer possible,
- *   so that is where the compaction and its cache cost belong.
- *
- * `attempts` is the number of compactions already tried in this run, successful or
- * not.
- */
-export function shouldCompactInRun(
-  status: Pick<ContextBudgetStatus, 'hardExceeded'>,
-  attempts: number,
-): boolean {
-  return status.hardExceeded && attempts < MAX_RUNTIME_COMPACTIONS;
 }
 
 /**
@@ -329,6 +294,8 @@ export class RuntimeContextManager {
     priorSummary?: Record<string, unknown>;
     abortSignal?: AbortSignal;
   }): Promise<{ checkpoint: contextStore.ContextCheckpoint; degraded?: { reason: string } }> {
+    const auditRecords: SummaryCallRecord[] = [];
+    const audit: SummaryAuditContext = { conversationId, runId: runId ?? null, trigger: triggerReason };
     const storedPrior = contextStore.getLatestContextCheckpoint(conversationId);
     const priorCheckpoint = priorSummary
       ? { programState: storedPrior?.programState ?? {}, modelSummary: priorSummary }
@@ -337,7 +304,7 @@ export class RuntimeContextManager {
     // Same triage as the runtime path, over stored messages instead of live ones. The zone
     // is only the part the next assembly would stop sending; the tail is re-sent verbatim
     // anyway, so summarising it would describe content that is still in the request.
-    const { cold } = splitColdZone(
+    const { cold, tail: coldTail } = splitColdZone(
       messages,
       resolveTailTokenLimit(budget.contextWindowTokens),
       estimateTextTokens,
@@ -364,14 +331,29 @@ export class RuntimeContextManager {
       programState,
       priorCheckpoint,
       abortSignal,
+      audit,
+      onRecord: (record) => { auditRecords.push(record); },
     });
 
-    // The checkpoint is saved either way: `programState` is deterministic and still
-    // correct, so a degraded summary is worth keeping — but it must not be reported as a
-    // clean compaction, or a systematically failing summariser stays invisible.
-    const modelSummary = summary.ok
-      ? withArchiveIndex(summary.summary, plan.archiveIndex)
-      : withArchiveIndex(fallbackSummary(programState), plan.archiveIndex);
+    // A degraded run-end pass must not replace a still-valid prior summary with a
+    // programState-only fallback: that would silently forget facts the last checkpoint
+    // had already established. Keep the prior summary and mark the new tail as uncovered.
+    const degraded = summary.ok ? undefined : { reason: summary.reason };
+    const baseSummary: Record<string, unknown> = summary.ok
+      ? summary.summary
+      : ((priorCheckpoint?.modelSummary as Record<string, unknown> | undefined) ?? fallbackSummary(programState));
+    const summarisedColdMessages = plan.summarised.reduce(
+      (count, group) => count + (Array.isArray(group.messages) ? group.messages.length : 1),
+      0,
+    );
+    const modelSummary = withContextCoverage(withArchiveIndex(baseSummary, plan.archiveIndex), {
+      totalMessages: messages.length,
+      summarisedMessages: summary.ok ? summarisedColdMessages : undefined,
+      ...(degraded ? { degraded } : {}),
+      summarisedGroups: plan.summarised.length,
+      uncoveredTail: coldTail.length > 0,
+      tailMessages: coldTail.length,
+    });
     const checkpoint = this.saveCheckpoint({
       conversationId,
       runId,
@@ -382,9 +364,12 @@ export class RuntimeContextManager {
       modelSummary,
       programState,
     });
+    for (const record of auditRecords) {
+      appendSummaryCall({ ...record, checkpointId: checkpoint.id });
+    }
     return {
       checkpoint,
-      ...(summary.ok ? {} : { degraded: { reason: summary.reason } }),
+      ...(degraded ? { degraded } : {}),
     };
   }
 }
@@ -503,6 +488,9 @@ export async function compactRuntimeMessages({
   abortSignal,
   toolMeta,
   priorCheckpoint,
+  activeUserMessage,
+  tailTokenLimit = resolveTailTokenLimit(contextWindowTokens),
+  audit,
 }: {
   llm: LLMConfig;
   messages: ChatCompletionMessageParam[];
@@ -512,6 +500,9 @@ export async function compactRuntimeMessages({
   toolMeta?: Map<string, ToolResultMeta>;
   /** Summary from a previous run: a compaction refines it instead of starting over. */
   priorCheckpoint?: Pick<contextStore.ContextCheckpoint, 'programState' | 'modelSummary'> | null;
+  activeUserMessage?: ChatCompletionMessageParam;
+  tailTokenLimit?: number;
+  audit?: SummaryAuditContext;
 }): Promise<CompactionOutcome> {
   let firstNonSystem = 0;
   while (firstNonSystem < messages.length && messages[firstNonSystem].role === 'system') firstNonSystem += 1;
@@ -521,7 +512,7 @@ export async function compactRuntimeMessages({
 
   const { cold, tail } = splitColdZone(
     mutable as unknown as ChatLikeMessage[],
-    resolveTailTokenLimit(contextWindowTokens),
+    tailTokenLimit,
     estimateTextTokens,
     estimateMessageTokens,
   );
@@ -538,19 +529,24 @@ export async function compactRuntimeMessages({
     estimateTokens: estimateTextTokens,
     estimateMessage: estimateMessageTokens,
   });
-  const taskText = lastUserText(coldMessages) || lastUserText(mutable);
+  const taskText = activeUserMessage ? messageText(activeUserMessage.content) : lastUserText(mutable);
   const scorer = await buildBiodColdZoneScorer(groups, taskText);
   const plan = planColdZone(groups, {
     contextWindowTokens,
     estimateTokens: estimateTextTokens,
     ...(scorer ? { scorer } : {}),
   });
+  // Preserve the current instruction in its original position even when several
+  // synthetic user rows have pushed it out of the recent-user quota.
+  const activeGroup = plan.kept.find((group) => group.messages[0] === activeUserMessage);
+  if (activeGroup) activeGroup.render = 'full';
   const summary = await summariseColdZone({
     llm,
     plan,
     programState: {},
     priorCheckpoint: priorCheckpoint || null,
     abortSignal,
+    audit,
   });
   if (!summary.ok) return { messages, compacted: false, degraded: { reason: summary.reason } };
 
@@ -558,6 +554,17 @@ export async function compactRuntimeMessages({
     role: 'assistant',
     content: formatRuntimeSummary(summary.summary, plan.archiveIndex),
   };
+  const compactedSummary = withContextCoverage(withArchiveIndex(summary.summary, plan.archiveIndex), {
+    totalMessages: messages.length,
+    summarisedMessages: plan.summarised.reduce(
+      (count, group) => count + (Array.isArray(group.messages) ? group.messages.length : 1),
+      0,
+    ),
+    summarisedGroups: plan.summarised.length,
+    uncoveredTail: tail.length > 0,
+    tailMessages: tail.length,
+    source: 'in_run_compaction',
+  });
   return {
     messages: [
       ...pinned,
@@ -567,7 +574,7 @@ export async function compactRuntimeMessages({
       ...(tail as unknown as ChatCompletionMessageParam[]),
     ],
     compacted: true,
-    summary: withArchiveIndex(summary.summary, plan.archiveIndex),
+    summary: compactedSummary,
     archiveIndex: plan.archiveIndex,
   };
 }
@@ -646,12 +653,16 @@ async function summariseColdZone({
   programState,
   priorCheckpoint,
   abortSignal,
+  audit,
+  onRecord,
 }: {
   llm: LLMConfig;
   plan: ColdZonePlan<unknown>;
   programState: Record<string, unknown>;
   priorCheckpoint: Pick<contextStore.ContextCheckpoint, 'programState' | 'modelSummary'> | null;
   abortSignal?: AbortSignal;
+  audit?: SummaryAuditContext;
+  onRecord?: (record: SummaryCallRecord) => void;
 }): Promise<{ ok: true; summary: Record<string, unknown> } | { ok: false; reason: string }> {
   const chunks = buildSummaryChunks(plan.summarised);
   let previous: Record<string, unknown> | null = (priorCheckpoint?.modelSummary as Record<string, unknown> | undefined) ?? null;
@@ -661,7 +672,7 @@ async function summariseColdZone({
     return { ok: true, summary: previous ?? fallbackSummary(programState) };
   }
   for (const chunk of chunks) {
-    const result = await callSummariser({ llm, chunk, programState, previous, abortSignal });
+    const result = await callSummariser({ llm, chunk, programState, previous, abortSignal, audit, onRecord });
     if (!result.ok) return result;
     previous = result.summary;
   }
@@ -700,20 +711,26 @@ async function callSummariser({
   programState,
   previous,
   abortSignal,
+  audit,
+  onRecord,
 }: {
   llm: LLMConfig;
   chunk: string;
   programState: Record<string, unknown>;
   previous: Record<string, unknown> | null;
   abortSignal?: AbortSignal;
+  audit?: SummaryAuditContext;
+  onRecord?: (record: SummaryCallRecord) => void;
 }): Promise<{ ok: true; summary: Record<string, unknown> } | { ok: false; reason: string }> {
-  const prompt = [
+  const basePrompt = [
     'Summarize only the current conversation for context compaction.',
     'Preserve the user goal, completed work, decisions, exact file paths, tool outcomes, remaining work, and blockers.',
     'Carry forward still-valid facts from previousCheckpoint and remove only what the newer messages supersede.',
     'The messages below are already condensed: tool output bodies live in an archive and are described, not quoted.',
     'Never invent file contents. Mention that exact details require a workspace file reload.',
-    'Return strict JSON only. Do not include markdown.',
+    'Return strict JSON only. Do not include markdown or prose.',
+    'The top-level keys MUST be exactly: schemaVersion, taskState, decisions, stableFacts, completedActions, pendingActions, discardedContext, continuationPrompt.',
+    'Do not rename them (for example do not use user_goal, completed_work, or file_paths).',
     '',
     'Required JSON schema:',
     JSON.stringify(SUMMARY_JSON_SCHEMA),
@@ -728,18 +745,74 @@ async function callSummariser({
     chunk,
     '</conversationMessages>',
   ].join('\n');
-  try {
-    const text = await getLLMClient(llm).completeText([
-      { role: 'system', content: 'You summarize conversation state for safe context compaction.' },
-      { role: 'user', content: prompt },
-    ], 1_800, abortSignal, { ignoreThinking: true });
-    if (!text.trim()) return { ok: false, reason: 'the summariser returned empty text' };
-    const summary = parseModelJson(text);
-    if ('raw' in summary) return { ok: false, reason: 'the summariser replied with non-JSON text' };
-    return { ok: true, summary };
-  } catch (error) {
-    return { ok: false, reason: error instanceof Error ? error.message : String(error) };
+  let lastReason = 'the summariser returned no usable response';
+  let previousReply = '';
+  for (let attempt = 1; attempt <= 2; attempt += 1) {
+    const started = Date.now();
+    const requestId = crypto.randomUUID();
+    const responseMeta: Record<string, unknown> = {};
+    const prompt = attempt === 1
+      ? basePrompt
+      : `${basePrompt}\n\nYour previous reply was rejected (${lastReason}). Return ONLY the required JSON object with the exact top-level keys from the schema. Previous reply:\n${previousReply.slice(0, 4_000)}`;
+    const emit = (outcome: SummaryCallRecord['outcome'], error?: string): void => {
+      const record: SummaryCallRecord = {
+        ...(audit ?? { trigger: 'unknown' }),
+        ts: new Date().toISOString(),
+        requestId,
+        protocol: String(responseMeta.protocol ?? llm.protocol ?? 'openai-completions'),
+        maxTokens: 1_800,
+        finishReason: (responseMeta.finishReason as string | null | undefined) ?? null,
+        contentChars: Number(responseMeta.contentChars ?? 0),
+        reasoningChars: Number(responseMeta.reasoningChars ?? 0),
+        promptTokens: (responseMeta.promptTokens as number | null | undefined) ?? null,
+        completionTokens: (responseMeta.completionTokens as number | null | undefined) ?? null,
+        cachedPromptTokens: (responseMeta.cachedPromptTokens as number | null | undefined) ?? null,
+        reasoningTokens: (responseMeta.reasoningTokens as number | null | undefined) ?? null,
+        latencyMs: Date.now() - started,
+        outcome,
+        ...(typeof responseMeta.attempts === 'number' ? { attempts: responseMeta.attempts } : {}),
+        ...(typeof responseMeta.compatRetry === 'boolean' ? { compatRetry: responseMeta.compatRetry } : {}),
+        ...(error ? { error: error.slice(0, 300) } : {}),
+      };
+      (onRecord ?? appendSummaryCall)(record);
+    };
+    try {
+      const text = await getLLMClient(llm).completeText([
+        { role: 'system', content: 'You summarize conversation state for safe context compaction.' },
+        { role: 'user', content: prompt },
+      ], 1_800, abortSignal, {
+        ignoreThinking: true,
+        onResponse: (meta) => { Object.assign(responseMeta, meta); },
+      });
+      if (!text.trim()) {
+        emit('empty');
+        lastReason = 'the summariser returned empty text';
+        previousReply = '';
+        continue;
+      }
+      const summary = parseModelJson(text);
+      if ('raw' in summary) {
+        emit('invalid_json');
+        lastReason = 'the summariser replied with non-JSON text';
+        previousReply = text;
+        continue;
+      }
+      if (!isValidSummary(summary)) {
+        emit('invalid_schema');
+        lastReason = 'the summariser used a different JSON schema';
+        previousReply = text;
+        continue;
+      }
+      emit('ok');
+      return { ok: true, summary };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      emit('error', message);
+      lastReason = message;
+      previousReply = '';
+    }
   }
+  return { ok: false, reason: lastReason };
 }
 
 /**
@@ -754,6 +827,43 @@ function withArchiveIndex(summary: Record<string, unknown>, archiveIndex: string
     ? summary.discardedContext as Record<string, unknown>
     : {};
   return { ...summary, discardedContext: { ...discarded, archivedGroups: archiveIndex } };
+}
+
+/**
+ * Record what the checkpoint actually covers. `summarisedMessages` is the full history
+ * length only after a successful summariser pass; a preserved prior summary keeps its
+ * older count and explicitly marks the newer tail as uncovered.
+ */
+function withContextCoverage(
+  summary: Record<string, unknown>,
+  input: {
+    totalMessages: number;
+    summarisedMessages?: number | null;
+    degraded?: { reason: string };
+    summarisedGroups: number;
+    uncoveredTail?: boolean;
+    tailMessages?: number;
+    source?: string;
+  },
+): Record<string, unknown> {
+  const prior = isPlainRecord(summary.contextCoverage) ? summary.contextCoverage : {};
+  const priorCount = Number(prior.summarisedMessages);
+  const summarisedMessages = input.summarisedMessages !== undefined
+    ? input.summarisedMessages
+    : (Number.isFinite(priorCount) && priorCount >= 0 ? priorCount : null);
+  return {
+    ...summary,
+    contextCoverage: {
+      ...prior,
+      totalMessages: input.totalMessages,
+      summarisedMessages,
+      summarisedGroups: input.summarisedGroups,
+      uncoveredTail: input.uncoveredTail ?? Boolean(input.degraded),
+      ...(input.tailMessages !== undefined ? { tailMessages: input.tailMessages } : {}),
+      ...(input.source ? { source: input.source } : {}),
+      ...(input.degraded ? { degradationReason: input.degraded.reason } : {}),
+    },
+  };
 }
 
 /** Structural fallback: no paraphrase, but the fields a reader still needs. */
@@ -1012,6 +1122,18 @@ export function fingerprintPinnedContext(context: AgentRuntimeContext): string {
     skills: context.skills.map((skill) => [skill.id, skill.name, skill.description]),
   };
   return crypto.createHash('sha1').update(JSON.stringify(pinned)).digest('hex');
+}
+
+function isValidSummary(value: Record<string, unknown>): boolean {
+  const task = value.taskState;
+  return value.schemaVersion === 1
+    && Boolean(task) && typeof task === 'object' && !Array.isArray(task)
+    && typeof (task as Record<string, unknown>).userGoal === 'string'
+    && Array.isArray(value.decisions)
+    && Array.isArray(value.stableFacts)
+    && Array.isArray(value.completedActions)
+    && Array.isArray(value.pendingActions)
+    && typeof value.continuationPrompt === 'string';
 }
 
 function parseModelJson(content: string): Record<string, unknown> {

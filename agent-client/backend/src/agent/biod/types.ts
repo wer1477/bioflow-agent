@@ -16,6 +16,33 @@ export interface BiodCandidate {
   name: string;
   description: string;
   kind?: 'skill' | 'mcp' | 'kb';
+  /** Catalog domain, forwarded so the sidecar can render the same card the model sees. */
+  domain?: string;
+  /** Optional asset version from provenance metadata; part of the catalog fingerprint. */
+  version?: string;
+}
+
+/** Identity of the catalog snapshot a decision was made over. */
+export interface BiodCatalogMeta {
+  /** "toollibrary" or "knowledgebase". */
+  id: string;
+  /** Candidates before the native shortlist/budget. */
+  total: number;
+  /** Candidates actually sent after the shortlist/budget. */
+  shortlist: number;
+  /** SHA-256 over the full catalog cards (id/name/description/kind/domain/version). */
+  fingerprint: string;
+}
+
+/** What was actually put on the wire, observable in the decision and the ledger. */
+export interface BiodCandidateTransport {
+  mode: 'descriptions' | 'ids';
+  candidateCount: number;
+  descriptionChars: number;
+  truncated: boolean;
+  catalogFingerprint: string;
+  catalogTotal: number;
+  shortlist: number;
 }
 
 /** A pointwise score. Higher is better; `p` is a probability in [0, 1]. */
@@ -35,6 +62,8 @@ export interface BiodToolDecision {
   latencyMs: number;
   modelVersion: string;
   candidateCount: number;
+  transport?: BiodCandidateTransport;
+  fallback?: 'masked_retry';
 }
 
 export interface BiodKbDecision {
@@ -46,6 +75,8 @@ export interface BiodKbDecision {
   latencyMs: number;
   modelVersion: string;
   candidateCount: number;
+  transport?: BiodCandidateTransport;
+  fallback?: 'masked_retry';
 }
 
 export type BiodFailureReason =
@@ -57,7 +88,8 @@ export type BiodFailureReason =
   | 'bad_response'
   | 'catalog_mismatch'
   | 'circuit_open'
-  | 'model_mismatch';
+  | 'model_mismatch'
+  | 'prompt_too_long';
 
 export interface BiodFailure {
   ok: false;

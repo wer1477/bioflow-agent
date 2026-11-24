@@ -4,7 +4,7 @@
 
 - `agent-client/backend/` 是唯一的 Agent 运行时边界：Agent 状态、工具、MCP、Skill 和 workflow 编排都在服务端运行；对外通过 REST API 提供能力。其中 run 的实时输出是 **NDJSON over POST**（`POST /api/conversations/:id/runs`，`application/x-ndjson`），**不是 SSE**。
 - `agent-client/web/` 是 React 交互壳，只能消费 `/api`；新增 IDE 集成、SDK 或自动化同样消费 server API，不能耦合 Backend 内部模块。
-- biod 决策层由 backend 托管：`Biod/biod/serve.py` 是本地回环 sidecar（tool/knowledge 选择 + 冷区排序），Node 侧只经 `src/agent/biod/` 的 HTTP 边界调用；失败必须 fail-open，不得阻塞会话。
+- biod 决策层由 backend 托管：`biod/multitask/serve.py` 是本地回环 sidecar（能力选择、知识选择与冷区评分），Node 侧只经 `src/agent/biod/` 的 HTTP 边界调用；失败必须 fail-open，不得阻塞会话。
 - 改运行时行为时，先确认 API 契约与 Web 消费方；改 Web 时，不把运行时逻辑迁入前端。
 
 ## 源码与本地状态

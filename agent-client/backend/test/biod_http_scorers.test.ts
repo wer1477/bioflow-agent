@@ -620,10 +620,9 @@ test('service keeps the heuristic scorer for an unknown scorer value and records
   }
 });
 
-test('the shipped biod.json advertises pairTimeoutMs', () => {
+test('the shipped biod.json preserves the legacy pair timeout without enabling audit checkpoints', () => {
   const configDirectory = fileURLToPath(new URL('../config', import.meta.url));
   const parsed = loadBiodConfig(configDirectory, {});
   assert.equal(parsed.service.pairTimeoutMs, 8000);
-  assert.equal(parsed.framework?.decisionPoints['s2.premise']?.scorer, 'http');
-  assert.equal(parsed.framework?.decisionPoints['s2.rerank']?.scorer, 'heuristic');
+  assert.equal(parsed.framework?.enabled, false);
 });

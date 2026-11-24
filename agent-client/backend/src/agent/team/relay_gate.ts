@@ -1,4 +1,4 @@
-import { loadBiodConfig } from '../biod/config.js';
+import { isBiodDisabledByEnv, loadBiodConfig } from '../biod/config.js';
 
 /**
  * The gate a role passes before it can talk to another role.
@@ -41,7 +41,11 @@ export async function judgeRelay(
   options: { timeoutMs?: number } = {},
 ): Promise<RelayGateVerdict> {
   const config = loadBiodConfig();
-  if (!config.enabled) return escalate('disabled');
+  if (!config.enabled || isBiodDisabledByEnv()) return escalate('disabled');
+  // `off` (or any non-select policy) must not call the sidecar at all; the previous
+  // implementation ignored the decision-point mode and could still issue HTTP requests.
+  const relayPolicy = config.decisionPoints.relay_select;
+  if (relayPolicy.mode !== 'select') return escalate('policy_off');
 
   const baseUrl = String(config.service.baseUrl || '').replace(/\/+$/, '');
   if (!baseUrl) return escalate('not_configured');
@@ -64,7 +68,7 @@ export async function judgeRelay(
     });
     if (!response.ok) return escalate(`http_${response.status}`);
     const payload = await response.json() as Record<string, unknown>;
-    return interpret(payload);
+    return interpret(payload, relayPolicy.floor);
   } catch {
     // `abort(reason)` rejects with the reason, not an AbortError, so the signal is the only
     // reliable test for "we gave up waiting".
@@ -74,14 +78,14 @@ export async function judgeRelay(
   }
 }
 
-function interpret(payload: Record<string, unknown>): RelayGateVerdict {
+function interpret(payload: Record<string, unknown>, floor: number): RelayGateVerdict {
   const verdict = String(payload.verdict ?? '');
   if (verdict !== 'allow' && verdict !== 'reject') return escalate('unknown_verdict');
   const confidence = Number(payload.confidence);
   if (!Number.isFinite(confidence)) return escalate('bad_response');
 
   const reasons = toStringList(payload.reasons);
-  if (confidence < RELAY_CONFIDENCE_FLOOR) {
+  if (confidence < floor) {
     return { verdict: 'escalate', confidence, reasons, source: 'low_confidence' };
   }
   return { verdict, confidence, reasons, source: 'biod' };

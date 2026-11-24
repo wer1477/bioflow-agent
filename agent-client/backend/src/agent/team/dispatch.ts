@@ -9,13 +9,21 @@ import type { AgentRole } from '../config/agent_config_store.js';
  * whatever the child actually wrote. That keeps the cross-role channel trustworthy even
  * when a role is having a bad day.
  */
+export interface HandoffArtifactReference {
+  id: string;
+  path: string;
+  version: string;
+}
+
 export interface HandoffCard {
   id: string;
+  messageId?: string;
   fromRole: AgentRole;
   toRole: AgentRole;
   goal: string;
   summary: string;
   artifacts: string[];
+  artifactVersions?: HandoffArtifactReference[];
   openQuestions: string[];
   confidence: 'low' | 'medium' | 'high';
   createdAt: string;
@@ -24,22 +32,26 @@ export interface HandoffCard {
 const MAX_SUMMARY_CHARS = 800;
 
 export function buildHandoffCard(input: {
+  messageId?: string;
   fromRole: AgentRole;
   toRole: AgentRole;
   goal: string;
   answer: string;
   artifacts: string[];
+  artifactVersions?: HandoffArtifactReference[];
   failed?: boolean;
 }): HandoffCard {
   const answer = String(input.answer || '').trim();
   const summary = answer.length > MAX_SUMMARY_CHARS ? `${answer.slice(0, MAX_SUMMARY_CHARS)}\n…[truncated]` : answer;
   return {
     id: uuidv4(),
+    ...(input.messageId ? { messageId: input.messageId } : {}),
     fromRole: input.fromRole,
     toRole: input.toRole,
     goal: input.goal,
     summary: summary || '（该角色没有给出结论）',
     artifacts: input.artifacts,
+    ...(input.artifactVersions?.length ? { artifactVersions: input.artifactVersions } : {}),
     openQuestions: [],
     confidence: input.failed ? 'low' : 'medium',
     createdAt: new Date().toISOString(),
@@ -58,6 +70,9 @@ export function renderHandoffBlock(cards: HandoffCard[]): string {
       `- [${card.fromRole} → ${card.toRole}] ${card.goal}`,
       `  结论：${card.summary.replace(/\n/g, '\n  ')}`,
       ...(card.artifacts.length ? [`  产出：${card.artifacts.join(', ')}`] : []),
+      ...(card.artifactVersions?.length
+        ? [`  产出版本：${card.artifactVersions.map((item) => `${item.path} [${item.id} @ ${item.version}]`).join(', ')}`]
+        : []),
       ...(card.confidence !== 'high' ? [`  置信度：${card.confidence}`] : []),
     );
   }

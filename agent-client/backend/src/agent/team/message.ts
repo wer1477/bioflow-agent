@@ -33,6 +33,7 @@ export interface TeamMessage {
   body: string;
   /** Acceptance criteria, only meaningful for `delegate`. */
   expect?: string;
+  dependsOn?: string[];
   /** The message this one answers. */
   replyTo?: string;
   gate?: TeamMessageGate;
@@ -48,6 +49,7 @@ export function buildTeamMessage(input: {
   to: AgentRole;
   body: string;
   expect?: string;
+  dependsOn?: string[];
   replyTo?: string;
   gate?: TeamMessageGate;
 }): TeamMessage {
@@ -58,6 +60,7 @@ export function buildTeamMessage(input: {
     to: input.to,
     body: String(input.body ?? '').trim(),
     ...(input.expect ? { expect: String(input.expect).trim() } : {}),
+    ...(input.dependsOn?.length ? { dependsOn: [...input.dependsOn] } : {}),
     ...(input.replyTo ? { replyTo: input.replyTo } : {}),
     ...(input.gate ? { gate: input.gate } : {}),
     createdAt: new Date().toISOString(),

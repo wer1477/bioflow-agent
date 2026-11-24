@@ -26,7 +26,6 @@ import {
 } from '../../agent/subagent_catalog.js';
 import {
   appendHandoffCard,
-  appendTeamMessage,
   describeTeam,
   ensureRoleSession,
   listRoleSessions,
@@ -39,8 +38,11 @@ import {
   buildHandoffCard,
   renderHandoffBlock,
   type HandoffCard,
+  type HandoffArtifactReference,
 } from '../../agent/team/dispatch.js';
-import { drainTeamMessages } from '../../agent/team/message_bus.js';
+import {
+  drainTeamMessages, enqueueTeamMessage, finishTeamMessage, recoverTeamMessages, startTeamMessage,
+} from '../../agent/team/message_bus.js';
 import { buildTeamMessage, renderTeamMessagePrompt, type TeamMessage } from '../../agent/team/message.js';
 import { TEAM_ROLE_IDS, getTeamConfig, type AgentRole } from '../../agent/config/agent_config_store.js';
 import {
@@ -1065,13 +1067,21 @@ async function runTeamRounds(options: {
   let message = options.message;
   let goalRound: GoalRoundRequest | undefined;
   let automaticRounds = 0;
+  let nextLeadMessages: TeamMessage[] = [];
+  let leadDeliveryFailed = false;
+  recoverTeamMessages(rootId);
 
   const relay = (event: unknown) => {
     if (!event || typeof event !== 'object') return emit(event);
+    if (nextLeadMessages.length && (event as { type?: string }).type === 'error') {
+      leadDeliveryFailed = true;
+    }
     emit({ ...(event as Record<string, unknown>), roleId, roleSessionId: sessionId });
   };
 
   for (;;) {
+    leadDeliveryFailed = false;
+    for (const delivery of nextLeadMessages) startTeamMessage(rootId, delivery.id);
     await agentService.runCompletion({
       conversationId: sessionId,
       message,
@@ -1081,6 +1091,12 @@ async function runTeamRounds(options: {
       ...(goalRound ? { goalRound } : {}),
     }, { emit: relay, isOpen });
     if (!isOpen() || abortSignal.aborted) break;
+    if (leadDeliveryFailed) {
+      recoverTeamMessages(rootId);
+      break;
+    }
+    for (const delivery of nextLeadMessages) finishTeamMessage(rootId, delivery.id);
+    nextLeadMessages = [];
 
     const messages = drainTeamMessages(rootId);
     if (messages.length) {
@@ -1102,6 +1118,7 @@ async function runTeamRounds(options: {
       sessionId = leadSession.id;
       roleId = team.leadRoleId;
       goalRound = undefined;
+      nextLeadMessages = delivered;
       message = [
         ...(cards.length ? [renderAcceptancePrompt(cards)] : []),
         ...(delivered.length ? [renderDeliveredPrompt(delivered)] : []),
@@ -1152,16 +1169,21 @@ async function runTeamMessages(context: {
   const lead = team.leadRoleId;
   // The dispatched role starts from its own session, so the only shared state it gets is
   // what the team already wrote down.
-  const knownCards = readTeamState(rootId).cards;
   const cards: HandoffCard[] = [];
   const delivered: TeamMessage[] = [];
 
   const fromLead = context.messages.filter((message) => message.from === lead && message.to !== lead);
   const chained: TeamMessage[] = context.messages.filter((message) => !fromLead.includes(message));
 
-  const runOne = async (message: TeamMessage): Promise<{ answer: string; artifacts: string[]; failed: boolean }> => {
+  const runOne = async (message: TeamMessage): Promise<{
+    answer: string;
+    artifacts: string[];
+    artifactVersions: HandoffArtifactReference[];
+    failed: boolean;
+  }> => {
     const session = ensureRoleSession(rootId, message.to);
     lock(session.id);
+    startTeamMessage(rootId, message.id);
     emit({
       type: 'role_switch',
       fromRoleId: message.from,
@@ -1173,17 +1195,21 @@ async function runTeamMessages(context: {
 
     let answer = '';
     let failed = false;
+    const priorVersions = new Map(
+      getConversationArtifacts(session.id).map((artifact) => [artifact.id, artifact.updatedAt]),
+    );
     try {
       await agentService.runCompletion({
         conversationId: session.id,
-        message: renderDispatchPrompt(message, knownCards),
+        message: renderDispatchPrompt(message, readTeamState(rootId).cards),
         agentId: message.to,
         abortSignal,
       }, {
         emit: (event: unknown) => {
-          if (event && typeof event === 'object' && (event as { type?: string }).type === 'content') {
-            const chunk = (event as { content?: unknown }).content;
-            if (typeof chunk === 'string') answer += chunk;
+          if (event && typeof event === 'object') {
+            const response = event as { type?: string; content?: unknown };
+            if (response.type === 'content' && typeof response.content === 'string') answer += response.content;
+            if (response.type === 'error') failed = true;
           }
           if (!event || typeof event !== 'object') return emit(event);
           emit({ ...(event as Record<string, unknown>), roleId: message.to, roleSessionId: session.id });
@@ -1195,34 +1221,48 @@ async function runTeamMessages(context: {
       failed = true;
     }
 
-    const artifacts = getConversationArtifacts(session.id).map((artifact) => artifact.path).filter(Boolean);
-    return { answer, artifacts, failed: failed || !answer.trim() };
+    const artifactVersions = getConversationArtifacts(session.id)
+      .filter((artifact) => artifact.path && priorVersions.get(artifact.id) !== artifact.updatedAt)
+      .map((artifact) => ({ id: artifact.id, path: artifact.path, version: artifact.updatedAt }));
+    return { answer, artifacts: artifactVersions.map((artifact) => artifact.path), artifactVersions,
+      failed: failed || !answer.trim() };
   };
 
   if (fromLead.length) {
     const limit = Math.max(1, team.limits.maxConcurrentDispatches);
+    const byRole = new Map<AgentRole, TeamMessage[]>();
+    for (const message of fromLead) {
+      const queue = byRole.get(message.to) ?? [];
+      queue.push(message);
+      byRole.set(message.to, queue);
+    }
+    const groups = [...byRole.values()];
     let next = 0;
     const worker = async () => {
-      for (;;) {
-        const index = next;
-        next += 1;
-        const message = fromLead[index];
-        if (!message) return;
-        const { answer, artifacts, failed } = await runOne(message);
-        const card = buildHandoffCard({
-          fromRole: message.to,
-          toRole: message.from,
-          goal: message.body,
-          answer,
-          artifacts,
-          failed: failed || answer.startsWith('执行失败'),
-        });
-        appendHandoffCard(rootId, card);
-        emit({ type: 'handoff_card', card });
-        cards.push(card);
+      while (isOpen() && !abortSignal.aborted) {
+        const group = groups[next++];
+        if (!group) return;
+        for (const message of group) {
+          if (!isOpen() || abortSignal.aborted) return;
+          const { answer, artifacts, artifactVersions, failed } = await runOne(message);
+          if (!isOpen() || abortSignal.aborted) return;
+          const card = buildHandoffCard({
+            messageId: message.id,
+            fromRole: message.to,
+            toRole: message.from,
+            goal: message.body,
+            answer,
+            artifacts,
+            artifactVersions,
+            failed: failed || answer.startsWith('执行失败'),
+          });
+          appendHandoffCard(rootId, card);
+          emit({ type: 'handoff_card', card });
+          cards.push(card);
+        }
       }
     };
-    await Promise.all(Array.from({ length: Math.min(limit, fromLead.length) }, worker));
+    await Promise.all(Array.from({ length: Math.min(limit, groups.length) }, worker));
   }
 
   // Anything a role sent: one at a time, because a relay answers back to its sender.
@@ -1239,17 +1279,19 @@ async function runTeamMessages(context: {
       delivered.push(message);
       continue;
     }
-    const { answer, artifacts } = await runOne(message);
+    const { answer, artifacts, failed } = await runOne(message);
+    if (!isOpen() || abortSignal.aborted) break;
     if (message.kind !== 'reply') {
       const reply = buildTeamMessage({
         kind: 'reply',
         from: message.to,
         to: message.from,
-        body: renderRelayReply(answer, artifacts),
+        body: renderRelayReply(failed && !answer.trim() ? '执行失败：该角色未返回内容。' : answer, artifacts),
         replyTo: message.id,
       });
-      appendTeamMessage(rootId, reply);
-      chained.push(reply);
+      enqueueTeamMessage(rootId, reply);
+    } else {
+      finishTeamMessage(rootId, message.id);
     }
     chained.push(...drainTeamMessages(rootId));
   }
@@ -1275,7 +1317,11 @@ const MESSAGE_TRAILER: Partial<Record<TeamMessage['kind'], string>> = {
 };
 
 function renderDispatchPrompt(message: TeamMessage, cards: HandoffCard[] = []): string {
-  const handoffs = renderHandoffBlock(cards);
+  const dependencies = message.dependsOn;
+  const relevant = dependencies?.length
+    ? cards.filter((card) => card.messageId && dependencies.includes(card.messageId))
+    : cards;
+  const handoffs = renderHandoffBlock(relevant);
   return [
     ...(handoffs ? [handoffs, ''] : []),
     renderTeamMessagePrompt(message),

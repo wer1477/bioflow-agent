@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import type { ChatCompletionTool } from 'openai/resources/chat/completions';
+import { buildCoreToolsForAgent } from '../src/agent/core_tools_runtime.js';
 import { RuntimeToolDispatcher } from '../src/agent/runtime_tool_dispatcher.js';
 import { mcpManager } from '../src/agent/mcp_manager.js';
 import type { CatalogServerEntry } from '../src/agent/types.js';
@@ -398,4 +399,20 @@ test('knowledgebase browsing is scoped to the agent knowledge entries', async ()
   const blockedEntry = JSON.parse((await scoped.execute(KNOWLEDGEBASE_TOOL_NAME, { action: 'read', entry: 'Bioinformatics/anndata' })).result);
   assert.equal(blockedEntry.ok, false);
   assert.match(String(blockedEntry.error), /is not enabled for this agent/);
+});
+
+test('toollibrary exposes only capability selection and browsing', async () => {
+  const agent = { id: 'reviewer', coreToolIds: ['toollibrary'] };
+  const tool = buildCoreToolsForAgent(agent as never).find(
+    (entry) => entry.function.name === TOOLLIBRARY_TOOL_NAME,
+  );
+  const parameters = tool?.function.parameters?.properties;
+  assert.deepEqual((parameters?.action as { enum?: string[] })?.enum, ['select', 'catalog', 'index']);
+  const dispatcher = createDispatcher({ mainAgent: agent });
+  for (const action of ['hypothesis-screen', 'plan-audit', 'manuscript-audit', 'issue-audit']) {
+    const dispatched = await dispatcher.execute(TOOLLIBRARY_TOOL_NAME, { action });
+    const result = JSON.parse(dispatched.result);
+    assert.equal(result.ok, false);
+    assert.match(result.error, /Unknown toollibrary action/);
+  }
 });

@@ -18,16 +18,17 @@ import {
 } from './config/conversation_cache_state_store.js';
 import { subagentRuntime } from './core_tools/subagent_runtime.js';
 import {
-  MAX_RUNTIME_COMPACTIONS,
   compactRuntimeMessages,
   estimateContextBudget,
   formatBudgetStatus,
   getTokenUsageCalibration,
   recordObservedPromptTokens,
   resolveMaxOutputTokens,
-  shouldCompactInRun,
 } from './context_manager.js';
 import { resolveContextWindow } from './context_window.js';
+import { resolveTailTokenLimit } from './context/cold_zone.js';
+import type { TodoItem } from './conversation_panels.js';
+import { PLANNING_TOOL_NAME } from './core_tools/ids.js';
 import { RepeatedToolFailureError, ToolFailureTracker } from './tool_failure_guard.js';
 import { securityApprovalStore } from './security_approval_store.js';
 import { normalizeSecurityMode } from './security_policy.js';
@@ -75,7 +76,7 @@ function systemHeadDifference(
 ): string | null {
   const before = current[0] as { role?: unknown; content?: unknown } | undefined;
   const after = next[0] as { role?: unknown; content?: unknown } | undefined;
-  if (!before) return null;
+  if (before?.role !== 'system') return null;
   if (!after) return 'the candidate has no leading message';
   if (after.role !== 'system') return `role changed from ${String(before.role)} to ${String(after.role)}`;
   if (before.role !== after.role) return `role changed from ${String(before.role)} to system`;
@@ -191,14 +192,25 @@ export class AgentRuntime {
     for (const block of request.pinnedTail || []) {
       if (block) messages.push({ role: 'user', content: block });
     }
-    messages.push({ role: 'user', content: request.userMessage });
+    const activeUserMessage = { role: 'user', content: request.userMessage } as const;
+    messages.push(activeUserMessage);
 
     let tools: ChatCompletionTool[] = [];
     let toolUseTurns = 0;
     let currentTurnIndex = 0;
     let currentRequestId = '';
     let contextWatermarkAnnounced = false;
-    let runtimeCompactionAttempts = 0;
+    let priorCheckpoint = request.priorCheckpoint ?? null;
+    let pendingTodos: TodoItem[] = [];
+    let waitingForUser = false;
+    let completionReminder: string | null = null;
+    const observeToolEvent = (event: AgentEvent): void => {
+      if (event.type !== 'planning_panel') return;
+      waitingForUser = event.status === 'waiting';
+      if (event.panel === 'todo') {
+        pendingTodos = event.status === 'complete' ? [] : (event.todos ?? []).filter((todo) => todo.status !== 'completed');
+      }
+    };
     const toolFailureTracker = new ToolFailureTracker();
     // What each call was and how it ended, keyed by tool-call id. The messages array holds
     // only role + content, so a compaction would otherwise see a `tool` message with no idea
@@ -289,7 +301,7 @@ export class AgentRuntime {
         argsPreview: previewArguments(execution?.arguments),
         outcome: toolError === undefined ? 'unknown' : toolError ? 'error' : 'ok',
         producedFiles: execution?.producedFiles ? [...execution.producedFiles] : [],
-        blobRef: `blobs/sha256-${digest}.txt`,
+        ...(transcript ? { blobRef: `blobs/sha256-${digest}.txt` } : {}),
       });
       transcript?.recordToolResult({
         requestId: currentRequestId,
@@ -384,9 +396,9 @@ export class AgentRuntime {
     const contextWindow = resolveContextWindow(request.llm);
     // One estimator for the loop body and for the final report: `tools` grows when
     // `toolload` installs an MCP schema, so the closure must read the current value.
-    const estimateRuntimeBudget = () => estimateContextBudget({
+    const estimateRuntimeBudget = (candidate = messages) => estimateContextBudget({
       systemPrompt: '',
-      messages: messages.map((message) => ({ ...message })) as unknown as Record<string, unknown>[],
+      messages: candidate.map((message) => ({ ...message })) as unknown as Record<string, unknown>[],
       userMessage: '',
       contextWindowTokens: contextWindow.tokens,
       contextWindowSource: contextWindow.source,
@@ -409,91 +421,143 @@ export class AgentRuntime {
       let sawToolCalls = false;
       let responseTruncated = false;
       let turnContent = '';
+      const bufferCompletion = pendingTodos.length > 0 && !waitingForUser;
       currentTurnIndex += 1;
       let runtimeBudget = estimateRuntimeBudget();
-      if (shouldCompactInRun(runtimeBudget, runtimeCompactionAttempts)) {
-        runtimeCompactionAttempts += 1;
-        yield {
-          type: 'loop_health',
-          level: 'info',
-          reason: 'context_compaction_started',
-          detail: `${formatBudgetStatus(runtimeBudget)}. Compacting cold history before the next model turn (attempt ${runtimeCompactionAttempts}/${MAX_RUNTIME_COMPACTIONS}).`,
-        };
-        const compacted = await compactRuntimeMessages({
-          llm: request.llm,
-          messages,
-          contextWindowTokens: contextWindow.tokens,
-          abortSignal: request.abortSignal,
-          toolMeta: toolResultMeta,
-          priorCheckpoint: request.priorCheckpoint ?? null,
-        });
-        if (compacted.compacted) {
-          // Node 0 is the request prefix's first token. A compaction that rewrites it makes
-          // every later request in the run differ from the first token, and any later run
-          // that replays a different head pays the same penalty a second time. Refuse the
-          // splice rather than silently trading the whole prefix for one checkpoint.
-          const headChange = systemHeadDifference(messages, compacted.messages);
-          if (headChange) {
-            yield {
-              type: 'loop_health',
-              level: 'warning',
-              reason: 'context_compaction_head_rewrite_blocked',
-              detail: `Compaction would have rewritten the system message at index 0 (${headChange}), which invalidates the provider prefix cache from token 0. The splice was skipped.`,
-            };
-          } else {
-            messages.splice(0, messages.length, ...compacted.messages);
-            runtimeBudget = estimateRuntimeBudget();
-            yield {
-              type: 'loop_health',
-              level: 'info',
-              reason: 'context_compaction_completed',
-              detail: formatBudgetStatus(runtimeBudget),
-            };
-            // Hand the structured summary to the caller now: at run end it can persist this
-            // object instead of summarising the same history a second time.
-            request.onRuntimeContext?.({ budget: runtimeBudget, summary: compacted.summary });
-          }
-        } else if (compacted.degraded) {
-          // Nothing was replaced, so nothing was lost — but calling this "completed" would
-          // hide a summariser that fails on every turn and leave the run limping toward the
-          // hard watermark with the model none the wiser.
-          yield {
-            type: 'loop_health',
-            level: 'warning',
-            reason: 'context_compaction_failed',
-            detail: `${formatBudgetStatus(runtimeBudget)}. Compaction failed (${compacted.degraded.reason}); the cold segment was kept verbatim, so no context was lost. The hard-watermark guard still applies to this turn.`,
-          };
-        }
-      }
       if (runtimeBudget.softExceeded && !contextWatermarkAnnounced) {
         contextWatermarkAnnounced = true;
         yield {
           type: 'loop_health',
           level: runtimeBudget.hardExceeded ? 'warning' : 'info',
           reason: 'context_watermark_exceeded',
-          detail: `${formatBudgetStatus(runtimeBudget)}. In-run compaction waits for the hard watermark; the durable checkpoint is written when the task finishes.`,
+          detail: formatBudgetStatus(runtimeBudget),
         };
       }
       if (runtimeBudget.hardExceeded) {
-        const exhausted = runtimeCompactionAttempts >= MAX_RUNTIME_COMPACTIONS;
-        const detail = [
-          `${formatBudgetStatus(runtimeBudget)}.`,
-          exhausted
-            ? `In-run compaction budget exhausted (${runtimeCompactionAttempts}/${MAX_RUNTIME_COMPACTIONS}); no further compaction is attempted.`
-            : '',
-          'Hard context watermark exceeded. Finish from the available context now, avoid further tool calls, and keep the response concise.',
-        ].filter(Boolean).join(' ');
-        pushRuntimeGuidance(messages, detail);
-        yield {
-          type: 'loop_health',
-          level: 'warning',
-          reason: 'context_hard_watermark_guard',
-          detail,
-        };
+        const tailLimit = resolveTailTokenLimit(contextWindow.tokens);
+        const tailLimits = [tailLimit, Math.max(1, Math.floor(tailLimit / 2)), Math.max(1, Math.floor(tailLimit / 4))];
+        for (const [index, tailTokenLimit] of tailLimits.entries()) {
+          if (!runtimeBudget.hardExceeded || (index > 0 && tailTokenLimit === tailLimit)) break;
+          throwIfAborted(request.abortSignal);
+          yield {
+            type: 'loop_health',
+            level: 'info',
+            reason: 'context_compaction_started',
+            detail: `${formatBudgetStatus(runtimeBudget)}. Recovering context before the next model turn (attempt ${index + 1}/${tailLimits.length}).`,
+          };
+          const compacted = await compactRuntimeMessages({
+            llm: request.llm, messages, contextWindowTokens: contextWindow.tokens,
+            abortSignal: request.abortSignal, toolMeta: toolResultMeta,
+            priorCheckpoint, activeUserMessage, tailTokenLimit,
+            audit: {
+              conversationId: request.conversationId ?? null,
+              runId: request.runId ?? null,
+              trigger: 'runtime_compaction',
+            },
+          });
+          throwIfAborted(request.abortSignal);
+          if (!compacted.compacted) {
+            yield {
+              type: 'loop_health',
+              level: 'warning',
+              reason: compacted.degraded ? 'context_compaction_failed' : 'context_compaction_no_progress',
+              detail: compacted.degraded?.reason ?? 'No eligible cold history could be compacted.',
+            };
+            if (compacted.degraded) break;
+            continue;
+          }
+          const headChange = systemHeadDifference(messages, compacted.messages);
+          if (headChange) {
+            yield { type: 'loop_health', level: 'warning', reason: 'context_compaction_head_rewrite_blocked', detail: headChange };
+            break;
+          }
+          const candidateBudget = estimateRuntimeBudget(compacted.messages);
+          if (candidateBudget.tokenEstimate >= runtimeBudget.tokenEstimate) {
+            yield { type: 'loop_health', level: 'warning', reason: 'context_compaction_no_progress', detail: formatBudgetStatus(candidateBudget) };
+            continue;
+          }
+          messages.splice(0, messages.length, ...compacted.messages);
+          runtimeBudget = candidateBudget;
+          if (compacted.summary) {
+            priorCheckpoint = { modelSummary: compacted.summary, programState: priorCheckpoint?.programState ?? {} };
+          }
+          yield { type: 'loop_health', level: 'info', reason: 'context_compaction_completed', detail: formatBudgetStatus(runtimeBudget) };
+          request.onRuntimeContext?.({ budget: runtimeBudget, summary: compacted.summary });
+        }
+        if (runtimeBudget.hardExceeded) {
+          // A text result can be shortened only when its original is in the trajectory.
+          // Keep each call/result pair intact and leave image and planning results alone.
+          const candidate = messages.map((message) => {
+            if (message.role !== 'tool' || typeof message.content !== 'string' || message.content.length <= 2_000) return message;
+            const meta = toolResultMeta.get(message.tool_call_id);
+            if (!meta?.blobRef || meta.toolName === PLANNING_TOOL_NAME) return message;
+            const content = [
+              message.content.slice(0, 800),
+              `[Tool output shortened. Outcome: ${meta.outcome}. Full result in run trajectory: ${meta.blobRef}.]`,
+              message.content.slice(-400),
+            ].join('\n');
+            return { ...message, content };
+          });
+          const candidateBudget = estimateRuntimeBudget(candidate);
+          if (candidateBudget.tokenEstimate < runtimeBudget.tokenEstimate) {
+            messages.splice(0, messages.length, ...candidate);
+            runtimeBudget = candidateBudget;
+            yield { type: 'loop_health', level: 'info', reason: 'context_tool_results_pruned', detail: formatBudgetStatus(runtimeBudget) };
+          }
+        }
+        if (runtimeBudget.tokenEstimate > runtimeBudget.contextLimit) {
+          // The normal plan kept or preserved more than the limit allows. Re-plan through
+          // the same cold-zone machinery with a smaller planning window instead of deleting
+          // raw rows: this keeps system/pinned blocks, the active instruction and complete
+          // tool-call/result groups, while moving more content to the summary/archive.
+          for (const factor of [0.8, 0.6, 0.4]) {
+            const planningWindow = Math.max(2_048, Math.floor(contextWindow.tokens * factor));
+            const replanned = await compactRuntimeMessages({
+              llm: request.llm,
+              messages,
+              contextWindowTokens: planningWindow,
+              abortSignal: request.abortSignal,
+              toolMeta: toolResultMeta,
+              priorCheckpoint,
+              activeUserMessage,
+              tailTokenLimit: resolveTailTokenLimit(planningWindow),
+              audit: {
+                conversationId: request.conversationId ?? null,
+                runId: request.runId ?? null,
+                trigger: 'runtime_compaction_replan',
+              },
+            });
+            if (!replanned.compacted) continue;
+            const headChange = systemHeadDifference(messages, replanned.messages);
+            if (headChange) {
+              yield { type: 'loop_health', level: 'warning', reason: 'context_compaction_head_rewrite_blocked', detail: headChange };
+              break;
+            }
+            const candidateBudget = estimateRuntimeBudget(replanned.messages);
+            if (candidateBudget.tokenEstimate >= runtimeBudget.tokenEstimate) continue;
+            messages.splice(0, messages.length, ...replanned.messages);
+            runtimeBudget = candidateBudget;
+            if (replanned.summary) {
+              priorCheckpoint = { modelSummary: replanned.summary, programState: priorCheckpoint?.programState ?? {} };
+            }
+            yield {
+              type: 'loop_health',
+              level: 'info',
+              reason: 'context_compaction_replanned',
+              detail: `Re-planned with a ${planningWindow}-token planning window. ${formatBudgetStatus(runtimeBudget)}`,
+            };
+            if (!runtimeBudget.hardExceeded) break;
+          }
+        }
+        if (runtimeBudget.tokenEstimate > runtimeBudget.contextLimit) {
+          const detail = `Context recovery could not fit the task and its tools within the model's input budget. ${formatBudgetStatus(runtimeBudget)}.`;
+          yield { type: 'loop_health', level: 'warning', reason: 'context_budget_blocked', detail };
+          throw new ContextBudgetExceededError(detail);
+        }
       }
       yield { type: 'run_status', runId: request.runId || null, status: 'model_turn' };
 
-      const toolsForTurn = runtimeBudget.hardExceeded ? undefined : tools.length ? tools : undefined;
+      const toolsForTurn = tools.length ? tools : undefined;
       const maxTokensForTurn = resolveMaxOutputTokens(runtimeBudget);
       currentRequestId = crypto.randomUUID();
       transcript?.recordModelRequest({
@@ -503,13 +567,7 @@ export class AgentRuntime {
         maxOutputTokens: maxTokensForTurn,
         messages,
         tools: toolsForTurn || null,
-        // A tool-less request caused by the hard watermark is a degradation, not a
-        // choice. Without this the transcript shows `tools: null` and cannot explain
-        // why the model stopped using tools.
         ...(toolsForTurn?.length ? { toolChoice: 'auto' as const } : {}),
-        ...(runtimeBudget.hardExceeded && tools.length
-          ? { degradations: [{ kind: 'tools_dropped' as const, reason: 'context_hard_watermark' }] }
-          : {}),
         budget: runtimeBudget,
         prefixHash: hashRequestPrefix(messages, toolsForTurn),
         ...(systemPromptProvenance ? { systemPrompt: systemPromptProvenance } : {}),
@@ -524,7 +582,7 @@ export class AgentRuntime {
         throwIfAborted(request.abortSignal);
         if (event.type === 'content') {
           turnContent += event.content;
-          yield event;
+          if (!bufferCompletion) yield event;
         } else if (event.type === 'thinking') {
           // Reasoning is forwarded to the UI but deliberately kept out of `turnContent`:
           // that string becomes the assistant message and the next request's messages, and
@@ -558,6 +616,7 @@ export class AgentRuntime {
           };
         } else if (event.type === 'tool_calls') {
           sawToolCalls = true;
+          if (bufferCompletion && turnContent) yield { type: 'content', content: turnContent };
           const toolCalls = event.tool_calls;
           transcript?.recordModelResponse({
             requestId: currentRequestId,
@@ -604,20 +663,26 @@ export class AgentRuntime {
             }
             const parallelResults = await Promise.all(parallelCalls.map(async (item) => {
               const startedAt = Date.now();
-              const result = await executeCoreTool(item.toolName, item.args, {
-                conversationId: request.conversationId,
-                runInstanceId,
-                runId: request.runId ?? undefined,
-                agent: request.mainAgent,
-                abortSignal: request.abortSignal,
-                projectPath: resolveConversationProjectPath(request.conversationId) ?? undefined,
-                delegationDepth: request.delegationDepth ?? 0,
-              });
-              return { ...item, result, durationMs: Date.now() - startedAt };
+              // Capability families (toollibrary/knowledgebase) are resident but only the
+              // dispatcher routes `action=select` to biod. Calling executeCoreTool directly
+              // here made a parallel select fall through to the browse executor, which has
+              // no select action. Keep one dispatch path for both parallel and serial calls.
+              const dispatched = await toolDispatcher.execute(item.toolName, item.args);
+              return {
+                ...item,
+                result: dispatched.result,
+                events: dispatched.events,
+                durationMs: Date.now() - startedAt,
+              };
             }));
             for (const item of parallelResults) {
-              const resultEvents = extractToolResultEvents(item.result);
-              for (const resultEvent of resultEvents) yield resultEvent;
+              // `RuntimeToolDispatcher` already extracted result events once. Re-extracting
+              // here duplicated artifact/file events for ordinary CoreTools; the parallel
+              // path emits exactly the dispatcher's event list.
+              for (const event of item.events) {
+                observeToolEvent(event);
+                yield event;
+              }
               for (const finalEvent of finalizeToolResult(item.toolCall.id, item.toolName, item.result, {
                 durationMs: item.durationMs,
                 producedFiles: producedFilesOf(item.result),
@@ -702,7 +767,10 @@ export class AgentRuntime {
             // Measured around the tool body only: the security assessment and any
             // approval wait above are not execution time.
             const dispatchDurationMs = Date.now() - dispatchStartedAt;
-            for (const event of dispatched.events) yield event;
+            for (const event of dispatched.events) {
+              observeToolEvent(event);
+              yield event;
+            }
             for (const finalEvent of finalizeToolResult(toolCall.id, toolName, dispatched.result, {
               durationMs: dispatchDurationMs,
               producedFiles: producedFilesOf(dispatched.result),
@@ -727,7 +795,7 @@ export class AgentRuntime {
           level: 'warning',
           reason: 'model_response_truncated',
           detail,
-          discardedContentChars: turnContent.length,
+          discardedContentChars: bufferCompletion ? 0 : turnContent.length,
         };
         continue;
       }
@@ -739,6 +807,18 @@ export class AgentRuntime {
           toolCalls: [],
           finishReason: 'stop',
         });
+        if (bufferCompletion) {
+          const remaining = pendingTodos.map(({ id, text }) => ({ id, text }));
+          const key = JSON.stringify(remaining);
+          if (completionReminder === key) {
+            throw new PendingTasksError('The model stopped repeatedly with unfinished to-do items.');
+          }
+          completionReminder = key;
+          const detail = `The current run still has unfinished to-do items. Continue with the necessary tools, or use the planning tool to ask for missing user input. Remaining items: ${key}`;
+          pushRuntimeGuidance(messages, detail);
+          yield { type: 'loop_health', level: 'info', reason: 'pending_tasks_continued', detail };
+          continue;
+        }
         if (turnContent.trim()) {
           messages.push({ role: 'assistant', content: turnContent });
           request.onContextMessage?.({ role: 'assistant', content: turnContent, toolCalls: null });
@@ -803,6 +883,10 @@ function throwIfAborted(signal?: AbortSignal): void {
   if (!signal?.aborted) return;
   throw new AgentRunCancelledError();
 }
+
+export class ContextBudgetExceededError extends Error {}
+
+export class PendingTasksError extends Error {}
 
 export class AgentRunCancelledError extends Error {
   constructor() {

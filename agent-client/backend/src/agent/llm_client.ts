@@ -51,6 +51,23 @@ export type StreamEvent =
   | { type: 'usage'; promptTokens: number; completionTokens?: number; totalTokens?: number; cachedPromptTokens?: number }
   | { type: 'done' };
 
+/** Wire-level facts from a non-streaming internal completion, for audit and diagnosis. */
+export interface TextCompletionMeta {
+  protocol: 'anthropic-messages' | 'openai-responses' | 'openai-completions';
+  finishReason: string | null;
+  contentChars: number;
+  reasoningChars: number;
+  promptTokens: number | null;
+  completionTokens: number | null;
+  cachedPromptTokens: number | null;
+  reasoningTokens: number | null;
+  maxTokens: number;
+  /** HTTP attempts made for this completion (2 only when the reasoning-off retry fired). */
+  attempts: number;
+  /** True when the first attempt used the explicit reasoning-off parameter and was rejected. */
+  compatRetry: boolean;
+}
+
 /**
  * All configured endpoints use the OpenAI Chat Completions contract. The
  * application performs no provider or model detection; `thinkingLevel` is
@@ -65,6 +82,8 @@ export class LLMClient {
    * model is told that the image was omitted.
    */
   private readonly state = { supportsImages: true };
+  /** Set once an endpoint rejects the explicit reasoning-off parameter. */
+  private reasoningOffUnsupported = false;
 
   constructor(private readonly config: LLMConfig) {
     this.client = new OpenAI({
@@ -208,7 +227,7 @@ export class LLMClient {
     messages: ChatCompletionMessageParam[],
     maxTokens = 512,
     abortSignal?: AbortSignal,
-    options: { ignoreThinking?: boolean } = {},
+    options: { ignoreThinking?: boolean; onResponse?: (meta: TextCompletionMeta) => void } = {},
   ): Promise<string> {
     if (this.config.protocol === 'anthropic-messages') {
       return completeAnthropicText(this.anthropicConfig(), messages, maxTokens, abortSignal, options);
@@ -216,13 +235,60 @@ export class LLMClient {
     if (this.config.protocol === 'openai-responses') {
       return completeResponsesText(this.client, this.responsesConfig(), messages, maxTokens, abortSignal);
     }
-    const response = await this.request(() => this.client.chat.completions.create({
+    const requestBody = (reasoningOff: boolean) => ({
       model: this.config.model,
       messages,
       max_tokens: maxTokens,
-      ...(options.ignoreThinking ? {} : thinkingOptions(this.config)),
-    } as any, abortSignal ? { signal: abortSignal } : undefined));
-    return response.choices[0]?.message?.content || '';
+      // Omitting the field is not disabling provider-default reasoning. xtg reports
+      // reasoning_content and counts reasoning_tokens when it is omitted; an explicit
+      // "none" is the protocol-level off switch this endpoint honours. Older
+      // non-reasoning endpoints may reject the parameter, so a precise 400/422
+      // "unsupported reasoning_effort" gets one compatibility retry without it.
+      ...(options.ignoreThinking
+        ? (reasoningOff && !this.reasoningOffUnsupported ? { reasoning_effort: 'none' } : {})
+        : thinkingOptions(this.config)),
+    } as any);
+    let response: any;
+    let attempts = 1;
+    let compatRetry = false;
+    try {
+      response = await this.request(() => this.client.chat.completions.create(
+        requestBody(true), abortSignal ? { signal: abortSignal } : undefined,
+      ));
+    } catch (error) {
+      if (!options.ignoreThinking || this.reasoningOffUnsupported || !isUnsupportedReasoningOff(error)) throw error;
+      this.reasoningOffUnsupported = true;
+      attempts = 2;
+      compatRetry = true;
+      response = await this.request(() => this.client.chat.completions.create(
+        requestBody(false), abortSignal ? { signal: abortSignal } : undefined,
+      ));
+    }
+    const choice = response.choices[0];
+    const message = choice?.message as any;
+    const content = message?.content || '';
+    const reasoning = typeof message?.reasoning_content === 'string'
+      ? message.reasoning_content
+      : typeof message?.reasoning === 'string' ? message.reasoning : '';
+    const usage = (response as any).usage;
+    options.onResponse?.({
+      protocol: 'openai-completions',
+      finishReason: choice?.finish_reason ?? null,
+      contentChars: content.length,
+      reasoningChars: reasoning.length,
+      promptTokens: Number.isFinite(usage?.prompt_tokens) ? usage.prompt_tokens : null,
+      completionTokens: Number.isFinite(usage?.completion_tokens) ? usage.completion_tokens : null,
+      cachedPromptTokens: Number.isFinite(usage?.prompt_tokens_details?.cached_tokens)
+        ? usage.prompt_tokens_details.cached_tokens
+        : null,
+      reasoningTokens: Number.isFinite(usage?.completion_tokens_details?.reasoning_tokens)
+        ? usage.completion_tokens_details.reasoning_tokens
+        : null,
+      maxTokens,
+      attempts,
+      compatRetry,
+    });
+    return content;
   }
 
   private responsesConfig(): ResponsesConfig {
@@ -290,6 +356,14 @@ export function captureFailedResponseBodies(fetchImpl: typeof fetch): typeof fet
 }
 
 /** Restores the rejected response body the SDK dropped, keeping `status` intact for retry checks. */
+function isUnsupportedReasoningOff(error: unknown): boolean {
+  const status = Number((error as { status?: unknown })?.status);
+  if (status !== 400 && status !== 422) return false;
+  const message = String((error as Error)?.message ?? error).toLowerCase();
+  return /reasoning[ _-]?effort/.test(message)
+    && /(unsupported|not supported|unknown|unrecognized|unexpected|extra|invalid)/.test(message);
+}
+
 export function describeProviderError(error: unknown): Error {
   const status = Number((error as { status?: unknown })?.status);
   const headers = (error as { headers?: { get?: (name: string) => string | null } })?.headers;

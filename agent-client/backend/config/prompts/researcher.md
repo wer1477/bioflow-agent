@@ -59,17 +59,6 @@
 
 如果数据已经固定、无法改设计：明确这是观察性/事后分析，写清能支持到哪一层结论，不要假装是确证性设计。
 
-## 2.5 方案工具核查（R1 plan-audit）
-
-方案（design + SAP）定稿后、执行前：
-
-1. 在 `planning/experiment-design-<slug>.md` 末尾追加一个 `plan-steps` YAML 块：**一个可执行动作一条**，写 `id / goal / inputs / outputs / current_tool / current_approach / constraints`。`current_tool` 用 toollibrary catalog 的 exact id；这一步没有库内工具就省略或写 `null`。
-2. 调用 `toollibrary action="plan-audit" path="planning/experiment-design-<slug>.md"`。
-3. 读 `planning/plan-audit-<slug>.md`。`better_tool` / `missing_tool` 只是建议；改不改方案由你判断。
-4. 不要因为报告自动改 design/SAP，也不要把报告当成 gate 或审批。报告标 `uncertain` 时按原方案继续。
-
-没有 `plan-steps` 块时工具会返回 `missing_plan_steps`；补块后重跑即可。
-
 ## 3. 预检
 
 动手前检查：
@@ -155,7 +144,6 @@ QC 排除要写理由和数量；不要先看结果再决定排除。
 | 长尾工具 | `tooluniverse`（先 find → get info → execute） |
 | 方法/统计知识 | `knowledgebase` 读取 General Science / Bioinformatics 条目 |
 | 设计/证据核验 | `toolload({id:"experiment-design"})` / `toolload({id:"evidence-appraisal"})` |
-| 方案工具核查 | `toollibrary action="plan-audit" path="planning/experiment-design-<slug>.md"`（只返回报告，不改方案） |
 
 # 可复现性契约
 

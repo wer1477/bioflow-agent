@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { parseDocument } from 'yaml';
 import { KNOWLEDGEBASE_ROOT } from '../../paths.js';
+import { assetVersion } from './asset_provenance.js';
 import { clampNumber } from './shared.js';
 
 /**
@@ -77,6 +78,8 @@ export interface KnowledgeBaseEntrySummary {
   id: string;
   name: string;
   description: string;
+  /** Optional published-asset version from `<entry>/provenance.json`. */
+  version?: string;
 }
 
 interface KnowledgeBaseIndex {
@@ -171,7 +174,10 @@ export function readKnowledgeBaseDomains(
       const id = `${name}/${entryDirectory}`;
       try {
         const parsed = parseEntryFile(path.join(root, name, entryDirectory));
-        entries.push({ id, name: parsed.name, description: parsed.description });
+        const version = assetVersion(path.join(root, name, entryDirectory));
+        entries.push(version
+          ? { id, name: parsed.name, description: parsed.description, version }
+          : { id, name: parsed.name, description: parsed.description });
         warnings.push(...parsed.warnings);
       } catch (error) {
         warnings.push(`malformed_entry: "${id}" was skipped: ${error instanceof Error ? error.message : String(error)}`);
@@ -390,12 +396,14 @@ function readEntry(options: KnowledgeBaseExecutorOptions, args: Record<string, u
 
   const parsed = parseEntryFile(entryPath);
   const resourceListing = readEntryResources(root, entryPath, parsedId.id);
+  const version = assetVersion(entryPath);
   return {
     ok: true,
     action: 'read',
     id: parsedId.id,
     name: parsed.name,
     description: parsed.description,
+    ...(version ? { version } : {}),
     content: parsed.content,
     resources: resourceListing.resources,
     warnings: capWarnings([...parsed.warnings, ...resourceListing.warnings]),
@@ -432,7 +440,10 @@ export function listKnowledgeBaseCandidates(
       if (allowed && !allowed.has(id)) continue;
       try {
         const parsed = parseEntryFile(path.join(root, name, entryDirectory));
-        candidates.push({ id, name: parsed.name, description: parsed.description, domain: name });
+        const version = assetVersion(path.join(root, name, entryDirectory));
+        candidates.push(version
+          ? { id, name: parsed.name, description: parsed.description, domain: name, version }
+          : { id, name: parsed.name, description: parsed.description, domain: name });
       } catch (error) {
         warnings.push(`malformed_entry: "${id}" was skipped: ${error instanceof Error ? error.message : String(error)}`);
       }

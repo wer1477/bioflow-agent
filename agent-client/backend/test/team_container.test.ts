@@ -106,6 +106,8 @@ test('team state defaults to auto on the lead role and persists edits', (t) => {
     lastRoute: null,
     cards: [],
     messages: [],
+    pendingDeliveries: [],
+    handoffOutcomes: {},
   });
 
   const manual = updateTeamState(root.id, { mode: 'manual', activeRoleId: 'writer' });

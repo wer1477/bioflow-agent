@@ -433,16 +433,34 @@ export async function completeAnthropicText(
   messages: ChatCompletionMessageParam[],
   maxTokens = 512,
   abortSignal?: AbortSignal,
-  options: { ignoreThinking?: boolean } = {},
+  options: { ignoreThinking?: boolean; onResponse?: (meta: import('./llm_client.js').TextCompletionMeta) => void } = {},
 ): Promise<string> {
   const effective: AnthropicConfig = options.ignoreThinking ? { ...config, thinking: undefined, thinkingLevel: undefined } : config;
   const body = { ...buildBody(effective, messages, undefined, maxTokens), stream: false };
   const response = await postMessages(effective, body, abortSignal);
-  const payload = await response.json().catch(() => ({})) as { content?: Array<Record<string, unknown>> };
-  return (payload.content || [])
+  const payload = await response.json().catch(() => ({})) as {
+    content?: Array<Record<string, unknown>>;
+    stop_reason?: string | null;
+    usage?: { input_tokens?: number; output_tokens?: number };
+  };
+  const text = (payload.content || [])
     .filter((block) => block.type === 'text' && typeof block.text === 'string')
     .map((block) => String(block.text))
     .join('');
+  options.onResponse?.({
+    protocol: 'anthropic-messages',
+    finishReason: payload.stop_reason ?? null,
+    contentChars: text.length,
+    reasoningChars: 0,
+    promptTokens: Number.isFinite(payload.usage?.input_tokens) ? Number(payload.usage?.input_tokens) : null,
+    completionTokens: Number.isFinite(payload.usage?.output_tokens) ? Number(payload.usage?.output_tokens) : null,
+    cachedPromptTokens: null,
+    reasoningTokens: null,
+    maxTokens,
+    attempts: 1,
+    compatRetry: false,
+  });
+  return text;
 }
 
 export async function testAnthropicConnection(config: AnthropicConfig): Promise<boolean> {

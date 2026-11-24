@@ -1,6 +1,6 @@
 # 部署实例
 
-登录鉴权只在部署实例开启；开发实例（`/path/to/bioflow`）不设
+登录鉴权只在部署实例开启；开发实例（`/path/to/bioflow-dev`）不设
 `BIOFLOW_AUTH_ENABLED`，继续使用原有会话/项目，不需要登录。
 
 ## 目录
@@ -8,7 +8,7 @@
 | 路径 | 用途 |
 | --- | --- |
 | `/path/to/bioflow-prod` | 部署代码，`git clone` 自开发仓库；不含运行数据 |
-| `/path/to/bioenv` | 只读共享主环境（Python/R/基础生信库），供所有用户和项目 venv 继承 |
+| `/path/to/bioflow-runtime/bioenv` | 只读共享主环境（Python/R/基础生信库），供所有用户和项目 venv 继承 |
 | `/path/to/bioflow-prod-data/config` | 运行配置（`agents.json`、`llm.json`、`mcp.json`、`prompts/`） |
 | `/path/to/bioflow-prod-data/workspace` | 用户 workspace 根；登录版每用户位于 `users/<userId>/` |
 | `/path/to/bioflow-prod-data/auth` | `auth.sqlite` 与 `auth-secret.key`（0600） |
@@ -46,7 +46,7 @@ BIOFLOW_MCP_CONTEXT7_API_KEY=<...>
 BIOFLOW_BIOD_PYTHON=<...>
 BIOFLOW_BIOD_REPO=<...>
 BIOFLOW_BIOD_CKPT=<...>
-BIOAGENT_ENV_BIN=/path/to/bioenv/bin
+BIOAGENT_ENV_BIN=/path/to/bioflow-runtime/bioenv/bin
 BIOFLOW_PROJECT_VENV=1
 ```
 
@@ -58,14 +58,14 @@ BIOFLOW_PROJECT_VENV=1
 部署只维护一份主环境，所有用户共享：
 
 ```bash
-sudo mkdir -p /data/projects/bioflow-runtime
-sudo rsync -a /path/to/bioflow/.bioenv/ /path/to/bioenv/
-sudo /path/to/bioenv/bin/python -m pip check
-sudo chown -R root:root /path/to/bioenv
-sudo chmod -R a-w /path/to/bioenv
+sudo mkdir -p /path/to/bioflow-runtime
+sudo rsync -a /path/to/bioflow-dev/.bioenv/ /path/to/bioflow-runtime/bioenv/
+sudo /path/to/bioflow-runtime/bioenv/bin/python -m pip check
+sudo chown -R root:root /path/to/bioflow-runtime/bioenv
+sudo chmod -R a-w /path/to/bioflow-runtime/bioenv
 ```
 
-- `BIOAGENT_ENV_BIN` 指向这份只读环境的 `bin`；`deployment-host` 只能读/执行，不能安装。
+- `BIOAGENT_ENV_BIN` 指向这份只读环境的 `bin`；托管只读环境只能读/执行，不能安装。
 - 每个项目第一次运行 shell 或 `execute_python` 时，用主环境 Python 创建
   `<project>/.venv`（`--system-site-packages`），基础包来自主环境，额外依赖只写入项目。
 - 子进程会设置 `VIRTUAL_ENV`、`PYTHONNOUSERSITE=1`、`PIP_REQUIRE_VIRTUALENV=true`、
@@ -95,14 +95,14 @@ screen -dmS bioagent-prod bash -lc \
 ## 反向代理
 
 `/etc/nginx/webnginxs/bioagent.conf` 把 `/bioagent/`、`/api/`、`/assets/` 代理到
-`127.0.0.1:3000`；对外地址为 `https://example.com/bioagent/`。
+`127.0.0.1:3000`；对外地址为 `https://bioflow.example.com/bioagent/`。
 `/api` 与 `/assets` 是根级路径，供同一域名下其他前端复用。
 
 ## frp
 
-`~/frp_0.62.1_linux_amd64/frpc.toml` 的 `transport.tls.enable = true` 加密 deployment-host 与
+`~/frp_0.62.1_linux_amd64/frpc.toml` 的 `transport.tls.enable = true` 加密 the host 与
 腾讯云 frps 之间的隧道；修改后重启 `frpc` screen，并用
-`curl -I https://example.com/bioagent/` 验证；失败时回滚该行。
+`curl -I https://bioflow.example.com/bioagent/` 验证；失败时回滚该行。
 
 ## 升级
 

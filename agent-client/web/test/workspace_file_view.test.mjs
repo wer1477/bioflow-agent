@@ -110,7 +110,7 @@ test('byte size formatting accepts numbers from the server and legacy strings', 
 });
 
 test('absolute paths from tool results are folded back into project-relative ones', () => {
-  const root = '/path/to/bioflow/agent-client/workspace/321';
+  const root = '/path/to/bioflow-dev/agent-client/workspace/321';
   assert.equal(toProjectRelativePath(`${root}/TASK.md`, root), 'TASK.md');
   assert.equal(toProjectRelativePath(`${root}/runs/data/a.tsv`, root), 'runs/data/a.tsv');
   assert.equal(toProjectRelativePath('runs/data/a.tsv', root), 'runs/data/a.tsv');

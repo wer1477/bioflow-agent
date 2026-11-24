@@ -43,6 +43,15 @@ export interface ManifestArtifact {
   source: 'tool_output' | 'artifact_event' | 'project_scan';
 }
 
+export interface ManifestInput {
+  path: string;
+  sha256: string | null;
+  bytes: number | null;
+  version?: string;
+  declaredSha256?: string;
+  match: boolean;
+}
+
 export interface RunManifest {
   schemaVersion: 1;
   generatedAt: string;
@@ -60,7 +69,7 @@ export interface RunManifest {
   transcript: { path: string; bytes: number; sha256: string | null; events: number } | null;
   tools: ManifestToolCall[];
   artifacts: ManifestArtifact[];
-  inputs: [];
+  inputs: ManifestInput[];
   warnings: string[];
 }
 
@@ -245,9 +254,73 @@ export async function buildRunManifest(input: BuildManifestInput): Promise<RunMa
     transcript: null,
     tools,
     artifacts,
-    inputs: [],
+    inputs: await collectDeclaredInputs(input.projectPath || null, warnings),
     warnings: [...new Set(warnings)],
   };
+}
+
+/**
+ * Input versions declared by the project, not re-discovered by a full scan.
+ *
+ * A project may write `.bioflow/inputs.json` (preferred) or `provenance/inputs.json`:
+ * `{ "inputs": [{ "path": "data/x.csv", "sha256": "...", "version": "v1" }] }`.
+ * The manifest hashes the real file and records whether the declaration still matches;
+ * a mismatch is a warning, not a silent success.
+ */
+async function collectDeclaredInputs(
+  projectPath: string | null,
+  warnings: string[],
+): Promise<ManifestInput[]> {
+  if (!projectPath) return [];
+  const candidates = [
+    path.join(projectPath, '.bioflow', 'inputs.json'),
+    path.join(projectPath, 'provenance', 'inputs.json'),
+  ];
+  const file = candidates.find((candidate) => fs.existsSync(candidate));
+  if (!file) return [];
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(await fs.promises.readFile(file, 'utf8'));
+  } catch (error) {
+    warnings.push(`input_provenance_unreadable: ${path.relative(projectPath, file)}: ${error instanceof Error ? error.message : String(error)}`);
+    return [];
+  }
+  const rows = Array.isArray(parsed)
+    ? parsed
+    : parsed && typeof parsed === 'object' && Array.isArray((parsed as { inputs?: unknown }).inputs)
+      ? (parsed as { inputs: unknown[] }).inputs
+      : [];
+  if (!rows.length) {
+    warnings.push(`input_provenance_empty: ${path.relative(projectPath, file)} declares no inputs`);
+    return [];
+  }
+  const root = path.resolve(projectPath);
+  const inputs: ManifestInput[] = [];
+  for (const raw of rows) {
+    if (!raw || typeof raw !== 'object') continue;
+    const row = raw as { path?: unknown; sha256?: unknown; version?: unknown };
+    const relative = typeof row.path === 'string' ? row.path : '';
+    if (!relative) continue;
+    const absolute = path.resolve(root, relative);
+    if (absolute !== root && !absolute.startsWith(`${root}${path.sep}`)) {
+      warnings.push(`input_provenance_outside_project: ${relative}`);
+      continue;
+    }
+    const declared = typeof row.sha256 === 'string' ? row.sha256 : undefined;
+    const hashed = fs.existsSync(absolute) ? await hashFile(absolute) : null;
+    if (!hashed) warnings.push(`input_missing: ${relative}`);
+    const match = Boolean(declared && hashed?.sha256 && declared.toLowerCase() === hashed.sha256.toLowerCase());
+    if (hashed && declared && !match) warnings.push(`input_sha256_mismatch: ${relative}`);
+    inputs.push({
+      path: relative,
+      sha256: hashed?.sha256 ?? null,
+      bytes: hashed?.bytes ?? null,
+      ...(typeof row.version === 'string' && row.version ? { version: row.version } : {}),
+      ...(declared ? { declaredSha256: declared } : {}),
+      match,
+    });
+  }
+  return inputs;
 }
 
 export function manifestPathForRun(conversationId: string, runId: string): string | null {

@@ -33,6 +33,12 @@ export interface Skill {
   isBuiltin: boolean;
   createdAt: string;
   updatedAt: string;
+  /**
+   * Absolute source directory this Skill was read from. Runtime-only: it is not
+   * persisted in the skills index and lets provenance metadata resolve without a
+   * second filesystem lookup or a duplicated path table.
+   */
+  directory?: string;
 }
 
 export interface SkillResource {
@@ -262,13 +268,14 @@ function recordSkillDiagnostic(skillPath: string, error: unknown, displayPath?: 
   console.warn(`[skills] Ignoring ${pathValue || skillPath}: ${message}`);
 }
 
-function readSkillDirectory(skillDir: string, existing: Partial<StoredSkill>, parsed = parseSkillMarkdown(fs.readFileSync(path.join(skillDir, SKILL_FILE), 'utf8'), skillNameFromDirectory(path.basename(skillDir)))): Skill {
+export function readSkillDirectory(skillDir: string, existing: Partial<StoredSkill>, parsed = parseSkillMarkdown(fs.readFileSync(path.join(skillDir, SKILL_FILE), 'utf8'), skillNameFromDirectory(path.basename(skillDir)))): Skill {
   const now = new Date().toISOString();
   return {
     id: existing.id || path.basename(skillDir), name: parsed.name, description: parsed.description, instructions: parsed.instructions,
     resources: readSkillResourceDirectory(skillDir), enabled: existing.enabled !== false,
     promptId: existing.promptId || null, examples: parsed.instructions,
     isBuiltin: Boolean(existing.isBuiltin), createdAt: existing.createdAt || now, updatedAt: now,
+    directory: path.resolve(skillDir),
   };
 }
 

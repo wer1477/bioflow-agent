@@ -57,7 +57,7 @@ test('a result with no owning call is its own group, not a fabricated pairing', 
 test('evidence lines are the paths, commands and failures, capped', () => {
   const text = [
     'Alright, let me look at the alignment.',
-    '/tmp/bioflow-run/out.bam was written by the aligner',
+    '/path/to/run/out.bam was written by the aligner',
     'samtools sort -@8 -o out.bam in.bam',
     'IndexError: no such file or directory',
     'This sentence is ordinary prose with no exact value in it.',

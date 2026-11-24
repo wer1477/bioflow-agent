@@ -32,9 +32,6 @@ import { buildQueue, decideIssue, decideOwner, decidePremise } from '../src/agen
 import { rankByPairwise } from '../src/agent/biod/reviewer/rank.js';
 import { auditIssues } from '../src/agent/biod/reviewer/audit.js';
 import { executeIssueAuditTool } from '../src/agent/biod/reviewer/tool.js';
-import { RuntimeToolDispatcher } from '../src/agent/runtime_tool_dispatcher.js';
-import { buildCoreToolsForAgent } from '../src/agent/core_tools_runtime.js';
-import { TOOLLIBRARY_TOOL_NAME } from '../src/agent/core_tools/ids.js';
 
 const tempDirectories: string[] = [];
 after(() => {
@@ -1034,18 +1031,6 @@ test('BiodService.runIssueAudit is disabled unless framework and reviewer are en
   }
 });
 
-test('shipped biod.json enables Reviewer V1 assist with the issue-audit budget', () => {
-  const configDirectory = fileURLToPath(new URL('../config', import.meta.url));
-  const parsed = loadBiodConfig(configDirectory, {});
-  assert.equal(parsed.framework?.reviewer?.enabled, true);
-  assert.equal(parsed.framework?.reviewer?.decisionPoints['v1.issue-triage']?.mode, 'assist');
-  assert.equal(parsed.framework?.reviewer?.decisionPoints['v1.issue-triage']?.budget, 'issue-audit');
-  assert.equal(parsed.framework?.reviewer?.thresholds.maxPairwiseIssues, 8);
-  // Existing sections stay untouched.
-  assert.equal(parsed.framework?.writer?.enabled, true);
-  assert.equal(parsed.framework?.researcher?.enabled, true);
-});
-
 test('biod config rejects an unsupported reviewer mode and warns on unknown thresholds', () => {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'biod-v1-config-'));
   try {
@@ -1070,49 +1055,6 @@ test('biod config rejects an unsupported reviewer mode and warns on unknown thre
   } finally {
     fs.rmSync(directory, { recursive: true, force: true });
   }
-});
-
-test('the toollibrary schema advertises issue-audit and the dispatcher gates it to the reviewer', async () => {
-  const tools = buildCoreToolsForAgent({ id: 'reviewer', coreToolIds: ['toollibrary'] } as never);
-  const toollibrary = tools.find((tool) => tool.function.name === TOOLLIBRARY_TOOL_NAME);
-  const action = toollibrary?.function.parameters?.properties?.action as { enum?: string[] } | undefined;
-  assert.ok(action?.enum?.includes('issue-audit'));
-  const properties = toollibrary?.function.parameters?.properties as Record<string, unknown> | undefined;
-  assert.ok(properties && 'issuesPath' in properties);
-
-  const projectPath = tempProject();
-  writeProject(projectPath);
-  const service = new BiodService({
-    config: config(),
-    issueAuditLedgerFile: path.join(projectPath, 'ledger.jsonl'),
-    environment: {},
-  });
-  const makeDispatcher = (agentId: string) => new RuntimeToolDispatcher({
-    request: {
-      llm: { baseUrl: 'http://example.test/v1', apiKey: 'unused', model: 'test' },
-      messages: [],
-      userMessage: 'audit the issues',
-      conversationId: 'conversation-v1',
-      mainAgent: { id: agentId, promptFile: `prompts/${agentId}.md` } as never,
-      mcpServers: [],
-      skills: [],
-    },
-    manager: {} as never,
-    mcpToolsByName: new Map(),
-    mcpServers: [],
-    addTools: () => [],
-    runInstanceId: 'run-v1',
-    projectPath,
-    biod: service,
-  });
-
-  const reviewer = JSON.parse((await makeDispatcher('reviewer').execute(TOOLLIBRARY_TOOL_NAME, { action: 'issue-audit' })).result);
-  assert.equal(reviewer.ok, true);
-  assert.equal(reviewer.reportPath, 'review/issue-audit-manuscript.md');
-
-  const writer = JSON.parse((await makeDispatcher('writer').execute(TOOLLIBRARY_TOOL_NAME, { action: 'issue-audit' })).result);
-  assert.equal(writer.ok, false);
-  assert.match(writer.error, /reviewer role/);
 });
 
 // ---------------------------------------------------------------------------

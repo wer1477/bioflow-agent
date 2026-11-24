@@ -4,6 +4,7 @@ import type { ChatCompletionTool } from 'openai/resources/chat/completions';
 import type { Skill } from '../config/skill_config_store.js';
 import { buildSkillMarkdown } from '../config/skill_config_store.js';
 import type { CatalogServerEntry } from '../types.js';
+import { assetVersion } from './asset_provenance.js';
 
 /**
  * Two-level tool library.
@@ -31,7 +32,9 @@ const WARNING_LIMIT = 20;
 const DEFAULT_PAGE_SIZE = 100;
 const MAX_PAGE_SIZE = 200;
 
-export type ToolLibrarySkill = Pick<Skill, 'id' | 'name' | 'description' | 'instructions' | 'resources'>;
+export type ToolLibrarySkill = Pick<Skill, 'id' | 'name' | 'description' | 'instructions' | 'resources'> & {
+  directory?: string;
+};
 
 export interface ToolLibraryContext {
   /** Absolute tool-library root. Tests inject a temporary directory. */
@@ -49,6 +52,8 @@ export interface ToolLibraryCatalogEntry {
   kind: 'skill' | 'mcp';
   id: string;
   description: string;
+  /** Optional published-asset version from `<skill dir>/provenance.json`. */
+  version?: string;
 }
 
 interface DomainCatalog {
@@ -282,7 +287,11 @@ export function collectToolLibraryCandidates(
   const state = buildCatalogState(context);
   const requested = String(domain || '').trim();
   const domains = requested ? state.domains.filter((item) => item.name === requested) : state.domains;
-  return domains.flatMap((item) => item.entries.map((entry) => ({ ...entry, domain: item.name })));
+  const skillsById = new Map(context.skills.map((skill) => [skill.id, skill]));
+  return domains.flatMap((item) => item.entries.map((entry) => {
+    const version = entry.kind === 'skill' ? assetVersion(skillsById.get(entry.id)?.directory) : undefined;
+    return version ? { ...entry, domain: item.name, version } : { ...entry, domain: item.name };
+  }));
 }
 
 /**

@@ -20,7 +20,7 @@ import {
   type AgentRole,
 } from '../config/agent_config_store.js';
 import type { Conversation } from '../config/conversation_types.js';
-import { HANDOFF_CARD_KEEP, type HandoffCard } from './dispatch.js';
+import { HANDOFF_CARD_KEEP, type HandoffCard, type HandoffArtifactReference } from './dispatch.js';
 import { TEAM_MESSAGE_KEEP, type TeamMessage } from './message.js';
 
 /**
@@ -49,6 +49,19 @@ export interface TeamRouteRecord {
   at: string;
 }
 
+export type TeamDeliveryState = 'queued' | 'claimed' | 'running' | 'interrupted' | 'blocked';
+
+export interface PendingTeamDelivery {
+  message: TeamMessage;
+  state: TeamDeliveryState;
+  reason?: string;
+}
+
+export interface TeamHandoffOutcome {
+  passed: boolean;
+  versions: HandoffArtifactReference[];
+}
+
 export interface TeamState {
   schemaVersion: number;
   mode: TeamMode;
@@ -59,10 +72,11 @@ export interface TeamState {
   /**
    * Every message the team sent, newest last, capped at `TEAM_MESSAGE_KEEP`.
    *
-   * This is the durable record of the cross-role channel: the in-flight queue in
-   * `message_bus` only holds what the current turn has not executed yet.
+   * The delivery queue is separate so a capped history can never drop work that is still pending.
    */
   messages: TeamMessage[];
+  pendingDeliveries: PendingTeamDelivery[];
+  handoffOutcomes: Record<string, TeamHandoffOutcome>;
 }
 
 export interface TeamRoleView {
@@ -110,6 +124,7 @@ export interface TeamView {
   lastRoute: TeamRouteRecord | null;
   cards: HandoffCard[];
   messages: TeamMessage[];
+  pendingDeliveries: PendingTeamDelivery[];
   roles: TeamRoleView[];
 }
 
@@ -162,6 +177,8 @@ export function readTeamState(rootId: string): TeamState {
     lastRoute: null,
     cards: [],
     messages: [],
+    pendingDeliveries: [],
+    handoffOutcomes: {},
   };
   const file = teamStatePath(rootId);
   if (!file || !fs.existsSync(file)) return defaults;
@@ -203,6 +220,7 @@ export function describeTeam(conversationId: string): TeamView | undefined {
     lastRoute: state.lastRoute,
     cards: state.cards,
     messages: state.messages,
+    pendingDeliveries: state.pendingDeliveries,
     roles: TEAM_ROLE_IDS.map((roleId) => {
       const agent = getAgent(roleId);
       const session = sessions.get(roleId);
@@ -302,7 +320,16 @@ function normalizeState(raw: Partial<TeamState>, fallback: TeamState): TeamState
   const messages = Array.isArray(raw.messages)
     ? raw.messages.filter((message): message is TeamMessage => isTeamMessage(message)).slice(-TEAM_MESSAGE_KEEP)
     : [];
-  return { schemaVersion: TEAM_SCHEMA_VERSION, mode, activeRoleId, lastRoute, cards, messages };
+  const pendingDeliveries = Array.isArray(raw.pendingDeliveries)
+    ? raw.pendingDeliveries.filter((entry): entry is PendingTeamDelivery =>
+      Boolean(entry) && isTeamMessage(entry.message) &&
+      ['queued', 'claimed', 'running', 'interrupted', 'blocked'].includes(entry.state))
+    : [];
+  const handoffOutcomes = Object.fromEntries(Object.entries(raw.handoffOutcomes || {}).filter(
+    ([, outcome]) => outcome && typeof outcome.passed === 'boolean' && Array.isArray(outcome.versions),
+  ));
+  return { schemaVersion: TEAM_SCHEMA_VERSION, mode, activeRoleId, lastRoute, cards, messages,
+    pendingDeliveries, handoffOutcomes };
 }
 
 function isTeamMessage(value: unknown): value is TeamMessage {
@@ -324,11 +351,48 @@ function writeTeamState(rootId: string, next: TeamState): TeamState {
 /** Append a card and drop the oldest beyond the keep limit. */
 export function appendHandoffCard(rootId: string, card: HandoffCard): TeamState {
   const current = readTeamState(rootId);
-  return writeTeamState(rootId, { ...current, cards: [...current.cards, card].slice(-HANDOFF_CARD_KEEP) });
+  return writeTeamState(rootId, {
+    ...current,
+    cards: [...current.cards, card].slice(-HANDOFF_CARD_KEEP),
+    pendingDeliveries: card.messageId
+      ? current.pendingDeliveries.filter((item) => item.message.id !== card.messageId)
+      : current.pendingDeliveries,
+    handoffOutcomes: card.messageId
+      ? {
+        ...current.handoffOutcomes,
+        [card.messageId]: { passed: card.confidence !== 'low', versions: card.artifactVersions || [] },
+      }
+      : current.handoffOutcomes,
+  });
 }
 
 /** Append a message to the durable record and drop the oldest beyond the keep limit. */
 export function appendTeamMessage(rootId: string, message: TeamMessage): TeamState {
   const current = readTeamState(rootId);
   return writeTeamState(rootId, { ...current, messages: [...current.messages, message].slice(-TEAM_MESSAGE_KEEP) });
+}
+
+/** One synchronous state update preserves the pairing of a team message and its delivery record. */
+export function enqueueTeamDelivery(rootId: string, message: TeamMessage): TeamMessage {
+  const state = readTeamState(rootId);
+  if (Object.hasOwn(state.handoffOutcomes, message.id) || state.messages.some((entry) => entry.id === message.id) ||
+      state.pendingDeliveries.some((entry) => entry.message.id === message.id)) return message;
+  writeTeamState(rootId, {
+    ...state,
+    messages: [...state.messages, message].slice(-TEAM_MESSAGE_KEEP),
+    pendingDeliveries: [
+      ...state.pendingDeliveries.filter((item) => message.kind !== 'reply' || item.message.id !== message.replyTo),
+      { message, state: 'queued' },
+    ],
+  });
+  return message;
+}
+
+export function updateTeamDeliveries(
+  rootId: string,
+  edit: (entries: PendingTeamDelivery[]) => PendingTeamDelivery[],
+): void {
+  const state = readTeamState(rootId);
+  const next = edit(state.pendingDeliveries);
+  if (next !== state.pendingDeliveries) writeTeamState(rootId, { ...state, pendingDeliveries: next });
 }

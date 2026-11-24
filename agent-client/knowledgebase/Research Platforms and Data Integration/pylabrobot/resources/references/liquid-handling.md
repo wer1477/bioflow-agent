@@ -32,7 +32,7 @@ lh = LiquidHandler(backend=STAR(), deck=STARLetDeck())
 
 # Opentrons OT-2
 from pylabrobot.liquid_handling.backends import OpentronsBackend
-lh = LiquidHandler(backend=OpentronsBackend(host="192.0.2.10"), deck=OTDeck())
+lh = LiquidHandler(backend=OpentronsBackend(host="192.168.1.100"), deck=OTDeck())
 
 # Simulation (no hardware required)
 from pylabrobot.liquid_handling.backends.simulation import ChatterboxBackend

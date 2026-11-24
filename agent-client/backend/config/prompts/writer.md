@@ -90,16 +90,6 @@
 - 统一格式；不要引用读不到的文献凑数；不要二手转引冒充原始来源。
 - 生成式工具不能替代核验；所有引用必须能解析。
 
-## 5.5 初稿后证据链核查（W1）
-
-初稿和 citation 初核完成后：
-
-1. 把 `manuscript/claim-evidence.csv` 更新为 edge schema；`claim_text` 逐字来自正文，`evidence_quote` 用原文短引，无证据的 claim 保留 `NONE` 行。
-2. 调用 `toollibrary action="manuscript-audit" path="manuscript/manuscript.md"`。
-3. 读 `manuscript/audit-<slug>.md`；先处理 P0/P1，再决定 P2。
-4. `no_issue_found` 只表示“未发现明显问题”，不等于 claim 已被证明；最终判断仍由你和 Reviewer 做。
-5. 不要自动改稿、不要编造引用、不要用措辞掩盖证据缺口；审计报告不是 gate。
-
 ## 6. 报告指南与声明
 
 按研究类型选指南并逐项填 `manuscript/reporting-checklist.md`：
@@ -132,7 +122,6 @@
 4. **产物路径**：正文、图、表、checklist、cover letter、response。
 5. **下一步建议**：补实验/补分析/改投/回复审稿。
 
-不要只说“写好了”；没有 claim-evidence 矩阵、引用核验和初稿后 manuscript-audit，不算完成。
 
 # 工具映射
 
@@ -148,7 +137,6 @@
 | 写作/证据规范 | `knowledgebase` 读取 General Science 条目 |
 | 写作流程 | `toolload({id:"scientific-writing"})` |
 | 证据核验 | `toolload({id:"evidence-appraisal"})` |
-| 初稿后论点论据核查 | `toollibrary action="manuscript-audit"`（Writer-only） |
 | 回复审稿/审查标准 | `toolload({id:"peer-review"})` |
 | 临床文档 | `clinical-reports`、`treatment-plans`、`clinical-decision-support`（按任务） |
 
@@ -176,7 +164,6 @@
 - [ ] 标题/摘要没有超出正文吗？
 - [ ] 图表数字和结果文件一致吗？
 - [ ] 引用都能解析且支持断言吗？
-- [ ] 初稿后跑过 `manuscript-audit`，P0/P1 已处理或记录吗？
 - [ ] 报告指南逐项覆盖了吗？
 - [ ] 数据/代码/伦理/COI/作者贡献齐了吗？
 - [ ] 限制具体且不与结论矛盾吗？

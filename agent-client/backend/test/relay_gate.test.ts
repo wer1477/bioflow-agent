@@ -13,13 +13,17 @@ async function withBiodConfig<T>(
 ): Promise<T> {
   const dir = await mkdtemp(path.join(os.tmpdir(), 'bioflow-relay-gate-'));
   const previous = process.env.BIOFLOW_CONFIG_DIR;
+  const previousDisabled = process.env.BIOFLOW_BIOD_DISABLED;
   process.env.BIOFLOW_CONFIG_DIR = dir;
+  delete process.env.BIOFLOW_BIOD_DISABLED;
   if (config) await writeFile(path.join(dir, 'biod.json'), JSON.stringify(config), 'utf8');
   try {
     return await callback();
   } finally {
     if (previous === undefined) delete process.env.BIOFLOW_CONFIG_DIR;
     else process.env.BIOFLOW_CONFIG_DIR = previous;
+    if (previousDisabled === undefined) delete process.env.BIOFLOW_BIOD_DISABLED;
+    else process.env.BIOFLOW_BIOD_DISABLED = previousDisabled;
     await rm(dir, { recursive: true, force: true });
   }
 }
@@ -46,7 +50,8 @@ async function startSidecar(handler: (body: Record<string, unknown>) => { status
 }
 
 function enabledConfig(baseUrl: string): Record<string, unknown> {
-  return { schemaVersion: 1, enabled: true, service: { baseUrl }, state: { maxChars: 220 } };
+  return { schemaVersion: 1, enabled: true, service: { baseUrl }, state: { maxChars: 220 },
+    decisionPoints: { relay_select: { mode: 'select', floor: 0.75 } } };
 }
 
 test('a disabled sidecar escalates instead of blocking', async () => {
@@ -132,5 +137,58 @@ test('an unreachable, slow or misbehaving sidecar fails open to the lead', async
     });
   } finally {
     nonsense.server.close();
+  }
+});
+
+test('relay_select off issues no sidecar request and escalates to the lead', async () => {
+  let calls = 0;
+  const sidecar = await startSidecar(() => { calls += 1; return { status: 200, payload: { verdict: 'allow', confidence: 0.99 } }; });
+  try {
+    const config = enabledConfig(sidecar.baseUrl) as any;
+    config.decisionPoints.relay_select = { mode: 'off', floor: 0.75 };
+    await withBiodConfig(config, async () => {
+      const verdict = await judgeRelay({ from: 'searcher', to: 'writer', body: 'x' });
+      assert.equal(verdict.verdict, 'escalate');
+      assert.equal(verdict.source, 'policy_off');
+      assert.equal(calls, 0);
+    });
+  } finally {
+    sidecar.server.close();
+  }
+});
+
+test('BIOFLOW_BIOD_DISABLED suppresses the relay request even when select is configured', async () => {
+  let calls = 0;
+  const sidecar = await startSidecar(() => { calls += 1; return { status: 200, payload: { verdict: 'allow', confidence: 0.99 } }; });
+  try {
+    await withBiodConfig(enabledConfig(sidecar.baseUrl), async () => {
+      process.env.BIOFLOW_BIOD_DISABLED = '1';
+      const verdict = await judgeRelay({ from: 'searcher', to: 'writer', body: 'x' });
+      assert.equal(verdict.source, 'disabled');
+      assert.equal(calls, 0);
+      delete process.env.BIOFLOW_BIOD_DISABLED;
+    });
+  } finally {
+    sidecar.server.close();
+  }
+});
+
+test('the configured relay floor, not the module constant, decides escalation', async () => {
+  const sidecar = await startSidecar(() => ({ status: 200, payload: { verdict: 'allow', confidence: 0.8 } }));
+  try {
+    const config = enabledConfig(sidecar.baseUrl) as any;
+    config.decisionPoints.relay_select.floor = 0.9;
+    await withBiodConfig(config, async () => {
+      const verdict = await judgeRelay({ from: 'searcher', to: 'writer', body: 'x' });
+      assert.equal(verdict.verdict, 'escalate');
+      assert.equal(verdict.source, 'low_confidence');
+    });
+    config.decisionPoints.relay_select.floor = 0.5;
+    await withBiodConfig(config, async () => {
+      const verdict = await judgeRelay({ from: 'searcher', to: 'writer', body: 'x' });
+      assert.equal(verdict.verdict, 'allow');
+    });
+  } finally {
+    sidecar.server.close();
   }
 });

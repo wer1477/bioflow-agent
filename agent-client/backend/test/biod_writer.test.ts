@@ -25,9 +25,6 @@ import { decideClaim } from '../src/agent/biod/writer/policy.js';
 import { auditManuscript } from '../src/agent/biod/writer/audit.js';
 import { MANUSCRIPT_AUDIT_RENDERER_VERSION } from '../src/agent/biod/writer/contracts.js';
 import { executeManuscriptAuditTool } from '../src/agent/biod/writer/tool.js';
-import { RuntimeToolDispatcher } from '../src/agent/runtime_tool_dispatcher.js';
-import { buildCoreToolsForAgent } from '../src/agent/core_tools_runtime.js';
-import { TOOLLIBRARY_TOOL_NAME } from '../src/agent/core_tools/ids.js';
 
 const tempDirectories: string[] = [];
 after(() => {
@@ -263,82 +260,6 @@ test('auditManuscript returns a per-claim report with P0 and stale claims', asyn
   assert.equal(result.report.summary.stale_claim, 1);
 });
 
-test('BiodService and the toollibrary action write a report and leave the draft untouched', async () => {
-  const project = tempProject();
-  writeProject(project);
-  const service = new BiodService({
-    config: writerConfig(),
-    manuscriptAuditScorer: new MockManuscriptAuditScorer(),
-    manuscriptAuditLedgerFile: path.join(project, 'biod-manuscript-audit.jsonl'),
-    environment: {},
-  });
-  const dispatcher = new RuntimeToolDispatcher({
-    request: {
-      llm: { baseUrl: 'http://example.test/v1', apiKey: 'unused', model: 'test' },
-      messages: [],
-      userMessage: 'audit the draft',
-      conversationId: 'conversation-w1',
-      mainAgent: { id: 'writer', promptFile: 'prompts/writer.md' } as never,
-      mcpServers: [],
-      skills: [],
-    },
-    manager: {} as never,
-    mcpToolsByName: new Map(),
-    mcpServers: [],
-    addTools: () => [],
-    runInstanceId: 'run-w1',
-    projectPath: project,
-    biod: service,
-  });
-  const result = JSON.parse((await dispatcher.execute(TOOLLIBRARY_TOOL_NAME, { action: 'manuscript-audit' })).result);
-  assert.equal(result.ok, true);
-  assert.equal(result.reportPath, 'manuscript/audit-manuscript.md');
-  assert.ok(fs.existsSync(path.join(project, 'manuscript/audit-manuscript.md')));
-  assert.equal(fs.readFileSync(path.join(project, 'manuscript/claim-evidence.csv'), 'utf8'), MATRIX);
-  const ledger = fs.readFileSync(path.join(project, 'biod-manuscript-audit.jsonl'), 'utf8').trim().split('\n');
-  assert.equal(JSON.parse(ledger[0]).decisionPoint, 'w1.claim-evidence-audit');
-});
-
-test('shadow mode logs the audit without writing a report', async () => {
-  const project = tempProject();
-  writeProject(project);
-  const config = writerConfig();
-  config.framework!.writer!.decisionPoints['w1.claim-evidence-audit'] = {
-    mode: 'shadow',
-    scorer: 'mock',
-    budget: 'claim-audit',
-  };
-  const service = new BiodService({
-    config,
-    manuscriptAuditScorer: new MockManuscriptAuditScorer(),
-    manuscriptAuditLedgerFile: path.join(project, 'biod-manuscript-audit.jsonl'),
-    environment: {},
-  });
-  const dispatcher = new RuntimeToolDispatcher({
-    request: {
-      llm: { baseUrl: 'http://example.test/v1', apiKey: 'unused', model: 'test' },
-      messages: [],
-      userMessage: 'audit the draft',
-      conversationId: 'conversation-w1-shadow',
-      mainAgent: { id: 'writer', promptFile: 'prompts/writer.md' } as never,
-      mcpServers: [],
-      skills: [],
-    },
-    manager: {} as never,
-    mcpToolsByName: new Map(),
-    mcpServers: [],
-    addTools: () => [],
-    runInstanceId: 'run-w1-shadow',
-    projectPath: project,
-    biod: service,
-  });
-  const result = JSON.parse((await dispatcher.execute(TOOLLIBRARY_TOOL_NAME, { action: 'manuscript-audit' })).result);
-  assert.equal(result.ok, true);
-  assert.equal(result.shadow, true);
-  assert.equal(fs.existsSync(path.join(project, 'manuscript/audit-manuscript.md')), false);
-  assert.ok(fs.existsSync(path.join(project, 'biod-manuscript-audit.jsonl')));
-});
-
 test('BiodService.runManuscriptAudit is disabled unless framework and writer are enabled', async () => {
   const config = writerConfig();
   delete config.framework;
@@ -362,55 +283,6 @@ test('BiodService.runManuscriptAudit is disabled unless framework and writer are
   });
   assert.equal(result.ok, false);
   if (!result.ok) assert.equal(result.reason, 'disabled');
-});
-
-test('manuscript-audit is Writer-only', async () => {
-  const project = tempProject();
-  writeProject(project);
-  const service = new BiodService({
-    config: writerConfig(),
-    manuscriptAuditScorer: new MockManuscriptAuditScorer(),
-    environment: {},
-  });
-  const dispatcher = new RuntimeToolDispatcher({
-    request: {
-      llm: { baseUrl: 'http://example.test/v1', apiKey: 'unused', model: 'test' },
-      messages: [],
-      userMessage: 'audit the draft',
-      conversationId: 'conversation-w1b',
-      mainAgent: { id: 'researcher', promptFile: 'prompts/researcher.md' } as never,
-      mcpServers: [],
-      skills: [],
-    },
-    manager: {} as never,
-    mcpToolsByName: new Map(),
-    mcpServers: [],
-    addTools: () => [],
-    runInstanceId: 'run-w1b',
-    projectPath: project,
-    biod: service,
-  });
-  const result = JSON.parse((await dispatcher.execute(TOOLLIBRARY_TOOL_NAME, { action: 'manuscript-audit' })).result);
-  assert.equal(result.ok, false);
-  assert.match(result.error, /only available to the writer role/);
-});
-
-test('shipped config enables Writer W1 assist and the new budget profiles exist', () => {
-  const configDirectory = fileURLToPath(new URL('../config', import.meta.url));
-  const parsed = loadBiodConfig(configDirectory, {});
-  assert.equal(parsed.framework?.writer?.enabled, true);
-  assert.equal(parsed.framework?.writer?.decisionPoints['w1.claim-evidence-audit']?.mode, 'assist');
-  assert.equal(parsed.framework?.writer?.decisionPoints['w1.claim-evidence-audit']?.budget, 'claim-audit');
-  assert.equal(budgetFor('claim-audit').maxStateTokens, 2_048);
-  assert.equal(budgetFor('claim-audit-max').maxTotalTokens, 32_768);
-});
-
-test('the toollibrary schema advertises manuscript-audit', () => {
-  const tools = buildCoreToolsForAgent({ id: 'writer', coreToolIds: ['toollibrary'] } as never);
-  const toollibrary = tools.find((tool) => tool.function.name === TOOLLIBRARY_TOOL_NAME);
-  assert.ok(toollibrary);
-  const action = toollibrary?.function.parameters?.properties?.action as { enum?: string[] } | undefined;
-  assert.ok(action?.enum?.includes('manuscript-audit'));
 });
 
 function passingPrecheck(): PrecheckResult {

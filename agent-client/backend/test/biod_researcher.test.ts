@@ -24,9 +24,6 @@ import { parsePlanSteps } from '../src/agent/biod/researcher/plan-steps.js';
 import { renderPlanAuditReport } from '../src/agent/biod/researcher/report.js';
 import { fitPlanAuditBudget, renderPlanAuditState } from '../src/agent/biod/researcher/renderer.js';
 import { executePlanAuditTool } from '../src/agent/biod/researcher/tool.js';
-import { RuntimeToolDispatcher } from '../src/agent/runtime_tool_dispatcher.js';
-import { buildCoreToolsForAgent } from '../src/agent/core_tools_runtime.js';
-import { TOOLLIBRARY_TOOL_NAME } from '../src/agent/core_tools/ids.js';
 
 const tempDirectories: string[] = [];
 after(() => {
@@ -303,16 +300,6 @@ test('executePlanAuditTool fails open for a non-researcher or a missing plan-ste
   assert.equal(missing.reason, 'missing_plan_steps');
 });
 
-test('shipped config enables Researcher R1 assist and parses its thresholds', () => {
-  const configDirectory = fileURLToPath(new URL('../config', import.meta.url));
-  const parsed = loadBiodConfig(configDirectory, {});
-  assert.equal(parsed.framework?.researcher?.enabled, true);
-  assert.equal(parsed.framework?.researcher?.decisionPoints['r1.plan-audit']?.mode, 'assist');
-  assert.equal(parsed.framework?.researcher?.decisionPoints['r1.plan-audit']?.budget, 'audit');
-  assert.equal(parsed.framework?.researcher?.thresholds.margin, 0.08);
-  assert.equal(parsed.framework?.researcher?.prefilter.maxCandidates, 16);
-});
-
 test('BiodService.runPlanAudit uses the heuristic scorer without a sidecar', async () => {
   const project = tempProject();
   const designPath = 'planning/experiment-design-demo.md';
@@ -348,58 +335,6 @@ test('BiodService.runPlanAudit is disabled unless both framework and researcher 
   });
   assert.equal(result.ok, false);
   if (!result.ok) assert.equal(result.reason, 'disabled');
-});
-
-test('the toollibrary schema advertises plan-audit', () => {
-  const tools = buildCoreToolsForAgent({ id: 'researcher', coreToolIds: ['toollibrary'] } as never);
-  const toollibrary = tools.find((tool) => tool.function.name === TOOLLIBRARY_TOOL_NAME);
-  assert.ok(toollibrary);
-  const action = toollibrary?.function.parameters?.properties?.action as { enum?: string[] } | undefined;
-  assert.ok(action?.enum?.includes('plan-audit'));
-});
-
-test('toollibrary action=plan-audit is wired through the dispatcher with a role gate', async () => {
-  const project = tempProject();
-  const designPath = 'planning/experiment-design-demo.md';
-  fs.mkdirSync(path.join(project, 'planning'), { recursive: true });
-  fs.writeFileSync(path.join(project, designPath), designDoc(), 'utf8');
-  const service = new BiodService({
-    config: config(),
-    planAuditScorer: new MockPlanAuditScorer({
-      S1: { 'pydeseq2': 0.9, [NO_TOOL_ID]: 0.1 },
-      S2: { 'scanpy': 0.9, [NO_TOOL_ID]: 0.1 },
-    }),
-    planAuditLedgerFile: path.join(project, 'ledger.jsonl'),
-    environment: {},
-  });
-  const dispatcher = new RuntimeToolDispatcher({
-    request: {
-      llm: { baseUrl: 'http://example.test/v1', apiKey: 'unused', model: 'test' },
-      messages: [],
-      userMessage: 'audit the plan',
-      conversationId: 'conversation-r1',
-      mainAgent: { id: 'researcher', promptFile: 'prompts/researcher.md' } as never,
-      mcpServers: [],
-      skills: TOOLS.map((tool) => ({
-        id: tool.id,
-        name: tool.name,
-        description: tool.description,
-        instructions: '',
-        resources: [],
-        directory: '',
-      })) as never,
-    },
-    manager: {} as never,
-    mcpToolsByName: new Map(),
-    mcpServers: [],
-    addTools: () => [],
-    runInstanceId: 'run-r1',
-    projectPath: project,
-    biod: service,
-  });
-  const parsed = JSON.parse((await dispatcher.execute(TOOLLIBRARY_TOOL_NAME, { action: 'plan-audit', path: designPath })).result);
-  assert.equal(parsed.ok, true);
-  assert.equal(parsed.reportPath, 'planning/plan-audit-demo.md');
 });
 
 function signal(scores: Record<string, number>): {

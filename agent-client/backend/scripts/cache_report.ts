@@ -8,7 +8,7 @@
  * 只读：不写 transcript、不调模型。
  *
  * 用法：
- *   BIOFLOW_WORKSPACE_DIR=/path/to/bioflow/agent-client/workspace \
+ *   BIOFLOW_WORKSPACE_DIR=/path/to/bioflow-dev/agent-client/workspace \
  *     npx tsx scripts/cache_report.ts <conversationId> [--json]
  */
 import { readTranscriptRecords } from '../src/agent/transcript_reader.js';

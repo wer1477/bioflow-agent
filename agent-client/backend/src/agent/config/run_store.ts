@@ -2,7 +2,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { readRecord, updateRecord } from './conversation_file_store.js';
 
 export type AgentRunStatus = 'queued' | 'building_context' | 'model_turn' | 'tool_execution' | 'waiting_user_input' | 'compacting' | 'completed' | 'failed' | 'cancelled';
-export type AgentRunStopReason = 'final_answer' | 'max_tokens' | 'budget_exceeded' | 'tool_error' | 'permission_denied' | 'user_input_required' | 'cancelled' | 'connection_error';
+export type AgentRunStopReason = 'final_answer' | 'max_tokens' | 'budget_exceeded' | 'unfinished_tasks' | 'tool_error' | 'permission_denied' | 'user_input_required' | 'cancelled' | 'connection_error';
 export interface AgentRun { id: string; conversationId: string; assistantMessageId: string | null; agentId: string | null; parentRunId: string | null; parentStepId: string | null; status: AgentRunStatus; stopReason: AgentRunStopReason | null; error: string; plan: unknown; loadedTools: string[]; loadedSkills: string[]; summary: string; metadata: Record<string, unknown>; startedAt: string; completedAt: string | null; updatedAt: string; }
 export interface AgentRunStep { id: string; runId: string; stepIndex: number; turnIndex: number | null; planStepIndex: number | null; parentStepId: string | null; kind: string; status: string; title: string; payload: unknown; resultPreview: string; startedAt: string; completedAt: string | null; }
 
